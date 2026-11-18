@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Plugins\**\*.cs;PluginContracts\**\*.cs" />
+    <ProjectReference Include="PluginContracts\PluginContracts.csproj" />
+    <ProjectReference Include="Plugins\Display\Display.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="Plugins\Logitech\Logitech.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <Target Name="CopyBuiltInPlugins" AfterTargets="Build">
+    <MSBuild Projects="Plugins\Display\Display.csproj;Plugins\Logitech\Logitech.csproj" Targets="GetTargetPath">
+      <Output TaskParameter="TargetOutputs" ItemName="BuiltInPluginAssemblies" />
+    </MSBuild>
+    <Copy SourceFiles="@(BuiltInPluginAssemblies)"
+          DestinationFiles="@(BuiltInPluginAssemblies->'$(OutDir)Plugins\%(Filename)\%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(BuiltInPluginAssemblies->'%(RootDir)%(Directory)%(Filename).deps.json')"
+          DestinationFiles="@(BuiltInPluginAssemblies->'$(OutDir)Plugins\%(Filename)\%(Filename).deps.json')" />
+  </Target>
+
+  <Target Name="PublishBuiltInPlugins" AfterTargets="Publish">
+    <Copy SourceFiles="$(OutDir)Plugins\Display\Display.dll;$(OutDir)Plugins\Display\Display.deps.json"
+          DestinationFolder="$(PublishDir)Plugins\Display" />
+    <Copy SourceFiles="$(OutDir)Plugins\Logitech\Logitech.dll;$(OutDir)Plugins\Logitech\Logitech.deps.json"
+          DestinationFolder="$(PublishDir)Plugins\Logitech" />
+  </Target>
+
+</Project>
