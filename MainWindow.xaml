@@ -40,11 +40,13 @@
             <Setter Property="IsExpanded" Value="True"/>
             <EventSetter Event="MouseDoubleClick" Handler="TreeItem_MouseDoubleClick"/>
         </Style>
-        <HierarchicalDataTemplate DataType="{x:Type local:StartupSection}" ItemsSource="{Binding Configurations}">
+        <HierarchicalDataTemplate DataType="{x:Type local:StartupSection}" ItemsSource="{Binding Children}">
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0"/>
                 <Button Content="Ajouter un plugin" Click="AddPluginStartup_Click"
                         ToolTip="Ajouter une configuration de démarrage de plugin"/>
+                <Button Content="Ajouter une action" Click="AddStartupAction_Click"
+                        ToolTip="Ajouter une action exécutée au démarrage"/>
             </StackPanel>
         </HierarchicalDataTemplate>
         <DataTemplate DataType="{x:Type local:PluginStartupConfiguration}">
@@ -91,6 +93,10 @@
                         Click="RemoveActionItem_Click" Foreground="#B42318" ToolTip="Supprimer l'action" AutomationProperties.Name="Supprimer l'action"/>
             </StackPanel>
         </DataTemplate>
+        <DataTemplate x:Key="ActionChoiceGroupHeaderTemplate">
+            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="#466586"
+                       Margin="0,5,0,2"/>
+        </DataTemplate>
     </Window.Resources>
 
     <DockPanel>
@@ -114,7 +120,8 @@
                 <Button Content="Ajouter action" Click="AddAction_Click"/>
                 <Button x:Name="EditActionButton" Content="Modifier action" IsEnabled="False" Click="EditAction_Click"/>
                 <Button Content="Supprimer action" Click="RemoveAction_Click"/>
-                <Button Content="Exécuter" Background="#2563EB" Foreground="White" BorderBrush="#2563EB" Click="RunMacro_Click"/>
+                <Button x:Name="RunSelectionButton" Content="Exécuter" IsEnabled="False"
+                        Background="#2563EB" Foreground="White" BorderBrush="#2563EB" Click="RunMacro_Click"/>
                 <Button Content="Déclencher un événement" Click="SimulateEvent_Click"/>
                 <Button Content="Arrêter les plugins" Click="StopPlugins_Click"/>
                 <Button Content="Enregistrer" Click="SaveConfiguration_Click"/>

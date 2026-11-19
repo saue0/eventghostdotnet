@@ -13,10 +13,11 @@
     <ProjectReference Include="PluginContracts\PluginContracts.csproj" />
     <ProjectReference Include="Plugins\Display\Display.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="Plugins\Logitech\Logitech.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="Plugins\SystemTrayMenu\SystemTrayMenu.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <Target Name="CopyBuiltInPlugins" AfterTargets="Build">
-    <MSBuild Projects="Plugins\Display\Display.csproj;Plugins\Logitech\Logitech.csproj" Targets="GetTargetPath">
+    <MSBuild Projects="Plugins\Display\Display.csproj;Plugins\Logitech\Logitech.csproj;Plugins\SystemTrayMenu\SystemTrayMenu.csproj" Targets="GetTargetPath">
       <Output TaskParameter="TargetOutputs" ItemName="BuiltInPluginAssemblies" />
     </MSBuild>
     <Copy SourceFiles="@(BuiltInPluginAssemblies)"
@@ -30,6 +31,8 @@
           DestinationFolder="$(PublishDir)Plugins\Display" />
     <Copy SourceFiles="$(OutDir)Plugins\Logitech\Logitech.dll;$(OutDir)Plugins\Logitech\Logitech.deps.json"
           DestinationFolder="$(PublishDir)Plugins\Logitech" />
+    <Copy SourceFiles="$(OutDir)Plugins\SystemTrayMenu\SystemTrayMenu.dll;$(OutDir)Plugins\SystemTrayMenu\SystemTrayMenu.deps.json"
+          DestinationFolder="$(PublishDir)Plugins\SystemTrayMenu" />
   </Target>
 
 </Project>

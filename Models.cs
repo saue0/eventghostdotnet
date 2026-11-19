@@ -8,10 +8,16 @@ using System.Windows.Data;
 
 namespace EventGhostDotNet;
 
-public sealed class StartupSection(ObservableCollection<PluginStartupConfiguration> configurations)
+public sealed class StartupSection(
+    ObservableCollection<PluginStartupConfiguration> configurations,
+    ObservableCollection<MacroAction> actions)
 {
     public string Name => "Démarrage";
-    public ObservableCollection<PluginStartupConfiguration> Configurations { get; } = configurations;
+    public CompositeCollection Children { get; } =
+    [
+        new CollectionContainer { Collection = configurations },
+        new CollectionContainer { Collection = actions }
+    ];
 }
 
 public sealed class PluginStartupConfiguration : INotifyPropertyChanged
@@ -313,6 +319,7 @@ public sealed class MacroAction : INotifyPropertyChanged
         MacroActionKind.Log => $"Journaliser : {Value}",
         MacroActionKind.Delay => $"Attendre : {Value} ms",
         MacroActionKind.Beep => "Émettre un signal sonore",
+        MacroActionKind.RaiseEvent => $"Déclencher l'événement : {Target}",
         MacroActionKind.ShowMessage => $"Afficher un message : {Value}",
         MacroActionKind.OpenUrl => $"Ouvrir l'URL : {Value}",
         MacroActionKind.PowerShell => $"Script PowerShell : {Value.Split(['\r', '\n'], 2)[0]}",
@@ -354,7 +361,8 @@ public enum MacroActionKind
     EnableAction,
     DisableAction,
     Jump,
-    If
+    If,
+    RaiseEvent
 }
 
 public enum JumpMode
