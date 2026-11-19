@@ -19,15 +19,44 @@ public sealed class LogitechModule : IPlugin, IPluginInstanceProvider
     public string Name => "Logitech";
     public IReadOnlyList<PluginActionDescriptor> Actions { get; } =
     [
-        new("LogitechStart", "Logitech — démarrer l'écoute"),
         new("LogitechChangeHost", "Logitech — changer d'hôte"),
         new("LogitechSendRaw", "Logitech — envoyer un rapport brut")
     ];
 
+    public bool HasStartupConfiguration => true;
+
+    public PluginStartupData CreateDefaultStartupConfiguration() =>
+        new("LogitechStart", Guid.NewGuid().ToString(), string.Empty, string.Empty);
+
+    public PluginStartupData? ConfigureStartup(PluginStartupData? existing, IPluginHost host)
+    {
+        var existingAction = existing is null
+            ? null
+            : new PluginActionData(existing.ConfigurationId, existing.Value, existing.Target);
+        var configured = ConfigureStart(existingAction, host);
+        return configured is null
+            ? null
+            : new PluginStartupData("LogitechStart", existing?.InstanceId ?? Guid.NewGuid().ToString(),
+                configured.Value, configured.Target);
+    }
+
+    public string DescribeStartup(PluginStartupData configuration) =>
+        string.IsNullOrWhiteSpace(configuration.Value)
+            ? "Logitech — démarrage"
+            : $"Logitech — {configuration.Value}";
+
+    public Task StartupAsync(
+        PluginStartupData configuration, IPluginHost host, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (configuration.ConfigurationId != "LogitechStart")
+            throw new InvalidOperationException($"Configuration de démarrage Logitech inconnue : {configuration.ConfigurationId}");
+        StartListening(configuration.Value, configuration.Target, host);
+        return Task.CompletedTask;
+    }
+
     public PluginActionData? ConfigureAction(string actionId, PluginActionData? existing, IPluginHost host)
     {
-        if (actionId == "LogitechStart")
-            return ConfigureStart(existing, host);
         if (actionId is not ("LogitechChangeHost" or "LogitechSendRaw"))
             throw new InvalidOperationException($"Action Logitech inconnue : {actionId}");
 
@@ -84,7 +113,6 @@ public sealed class LogitechModule : IPlugin, IPluginInstanceProvider
 
     public string DescribeAction(PluginActionData action) => action.ActionId switch
     {
-        "LogitechStart" => $"Logitech — démarrer l'écoute : {action.Value}",
         "LogitechChangeHost" => $"Logitech — changer d'hôte : {action.Value}",
         "LogitechSendRaw" => $"Logitech — envoyer HID : {action.Value}",
         _ => throw new InvalidOperationException($"Action Logitech inconnue : {action.ActionId}")
@@ -95,25 +123,6 @@ public sealed class LogitechModule : IPlugin, IPluginInstanceProvider
         cancellationToken.ThrowIfCancellationRequested();
         switch (action.ActionId)
         {
-            case "LogitechStart":
-                if (string.IsNullOrWhiteSpace(action.Target) || string.IsNullOrWhiteSpace(action.Value))
-                    throw new InvalidOperationException("Le récepteur et le préfixe d'événement Logitech sont obligatoires.");
-                if (_clients.TryGetValue(action.Target, out var current))
-                {
-                    if (current.Prefix == action.Value)
-                    {
-                        host.Log($"L'écoute Logitech « {action.Value} » est déjà démarrée.");
-                        return;
-                    }
-                    throw new InvalidOperationException($"Le récepteur Logitech est déjà utilisé avec le préfixe « {current.Prefix} ».");
-                }
-                var client = new LogitechUnifyClient(
-                    new LogitechReceiver(action.Target, action.Target),
-                    action.Value, host.RaiseEvent, host.Log);
-                client.Start();
-                _clients.Add(action.Target, new Instance(client, action.Value));
-                host.Log($"Écoute Logitech démarrée — événements préfixés par « {action.Value} ».");
-                break;
             case "LogitechChangeHost":
                 await GetClient(action.Target).ChangeHostAsync(action.Value);
                 break;
@@ -132,15 +141,24 @@ public sealed class LogitechModule : IPlugin, IPluginInstanceProvider
         await Task.WhenAll(clients.Select(instance => instance.Client.DisposeAsync().AsTask()));
     }
 
-    public async Task ActionChangedAsync(PluginActionData previous, PluginActionData updated)
+    private void StartListening(string prefix, string target, IPluginHost host)
     {
-        if (previous.ActionId != "LogitechStart" ||
-            (string.Equals(previous.Target, updated.Target, StringComparison.OrdinalIgnoreCase) &&
-             string.Equals(previous.Value, updated.Value, StringComparison.Ordinal)))
-            return;
-
-        if (_clients.Remove(previous.Target, out var instance))
-            await instance.Client.DisposeAsync();
+        if (string.IsNullOrWhiteSpace(target) || string.IsNullOrWhiteSpace(prefix))
+            throw new InvalidOperationException("Le récepteur et le préfixe d'événement Logitech sont obligatoires.");
+        if (_clients.TryGetValue(target, out var current))
+        {
+            if (current.Prefix == prefix)
+            {
+                host.Log($"L'écoute Logitech « {prefix} » est déjà démarrée.");
+                return;
+            }
+            throw new InvalidOperationException($"Le récepteur Logitech est déjà utilisé avec le préfixe « {current.Prefix} ».");
+        }
+        var client = new LogitechUnifyClient(
+            new LogitechReceiver(target, target), prefix, host.RaiseEvent, host.Log);
+        client.Start();
+        _clients.Add(target, new Instance(client, prefix));
+        host.Log($"Écoute Logitech démarrée — événements préfixés par « {prefix} ».");
     }
 
     public async ValueTask DisposeAsync() => await ResetAsync();
@@ -205,15 +223,16 @@ public sealed class LogitechModule : IPlugin, IPluginInstanceProvider
 
     private static string? SelectTarget(PluginActionData? existing, IPluginHost host)
     {
-        var targets = host.GetConfiguredActions("Logitech")
-            .Where(action => action.ActionId == "LogitechStart" &&
-                             !string.IsNullOrWhiteSpace(action.Target) && !string.IsNullOrWhiteSpace(action.Value))
-            .GroupBy(action => action.Target, StringComparer.OrdinalIgnoreCase)
+        var targets = host.GetPluginStartupConfigurations("Logitech")
+            .Where(configuration => configuration.ConfigurationId == "LogitechStart" &&
+                             !string.IsNullOrWhiteSpace(configuration.Target) &&
+                             !string.IsNullOrWhiteSpace(configuration.Value))
+            .GroupBy(configuration => configuration.Target, StringComparer.OrdinalIgnoreCase)
             .Select(group => new Target(group.Key, group.First().Value))
             .ToList();
         if (targets.Count == 0)
         {
-            MessageBox.Show(host.Owner, "Ajoutez d'abord une action « Logitech — démarrer l'écoute » à une macro.",
+            MessageBox.Show(host.Owner, "Ajoutez d'abord un démarrage Logitech dans la section « Démarrage ».",
                 "Aucun récepteur configuré", MessageBoxButton.OK, MessageBoxImage.Information);
             return null;
         }

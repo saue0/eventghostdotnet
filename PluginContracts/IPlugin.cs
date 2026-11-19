@@ -6,12 +6,25 @@ public sealed record PluginActionData(string ActionId, string Value, string Targ
 
 public sealed record PluginActionDescriptor(string Id, string Name);
 
-public interface IPluginHost
+public sealed record PluginStartupData(string ConfigurationId, string InstanceId, string Value, string Target);
+
+public interface IActionContext
+{
+    object? Result
+    {
+        get => null;
+        set => throw new NotSupportedException("Ce contexte ne prend pas en charge les résultats d'action.");
+    }
+
+    void Log(string message);
+    void RaiseEvent(string name, string? payload);
+}
+
+public interface IPluginHost : IActionContext
 {
     Window Owner { get; }
     IReadOnlyList<PluginActionData> GetConfiguredActions(string pluginId);
-    void Log(string message);
-    void RaiseEvent(string name, string? payload);
+    IReadOnlyList<PluginStartupData> GetPluginStartupConfigurations(string pluginId) => [];
 }
 
 public interface IPlugin : IAsyncDisposable
@@ -19,6 +32,14 @@ public interface IPlugin : IAsyncDisposable
     string Id { get; }
     string Name { get; }
     IReadOnlyList<PluginActionDescriptor> Actions { get; }
+    bool HasStartupConfiguration => false;
+    PluginStartupData CreateDefaultStartupConfiguration() =>
+        new("Startup", Guid.NewGuid().ToString(), string.Empty, string.Empty);
+    PluginStartupData? ConfigureStartup(PluginStartupData? existing, IPluginHost host) =>
+        existing ?? CreateDefaultStartupConfiguration();
+    string DescribeStartup(PluginStartupData configuration) => $"{Name} — démarrage";
+    Task StartupAsync(PluginStartupData configuration, IPluginHost host, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
     PluginActionData? ConfigureAction(string actionId, PluginActionData? existing, IPluginHost host);
     string DescribeAction(PluginActionData action);
     Task ExecuteActionAsync(PluginActionData action, IPluginHost host, CancellationToken cancellationToken);
