@@ -18,6 +18,8 @@ dotnet run
 - Modifier un événement individuellement par double-clic ou avec son crayon, ou le supprimer avec sa corbeille. Une macro peut ne contenir aucun événement et être lancée manuellement.
 - Activer ou désactiver chaque événement avec sa case à cocher ; un événement désactivé reste dans la configuration, mais ne déclenche pas la macro.
 - Créer, modifier et supprimer des macros avec zéro ou plusieurs événements déclencheurs ; la réception de l'un d'eux exécute la macro.
+- Organiser les macros en groupes, les déplacer entre groupes et conserver l'état ouvert ou fermé du démarrage, des groupes et des macros.
+- Réordonner les groupes, les macros et les actions, y compris les actions de démarrage, avec les commandes Monter et Descendre.
 - Modifier une macro ou une action par double-clic ou avec son crayon ; la corbeille demande confirmation avant suppression.
 - Associer, modifier et supprimer une séquence d'actions : écrire dans le journal, attendre, émettre un signal sonore, afficher un message, ouvrir une URL HTTP(S), déclencher un événement avec payload facultatif ou exécuter un script PowerShell.
 - Choisir une action dans un sélecteur regroupé par source : Système, Logitech ou Display.
@@ -25,15 +27,19 @@ dotnet run
 - Ajouter des branchements système : `Jump` peut appeler une autre macro en arrêtant ou reprenant la macro courante, ou sauter vers une action de celle-ci ; `If` compare le résultat de l'action précédente à une chaîne (égalité, présence ou différence) et saute l'action suivante si la condition est fausse.
 - Activer ou désactiver une macro ou une action avec sa case à cocher ou une action système ciblée. Une macro inactive ne réagit plus aux événements, mais reste exécutable manuellement ; ses actions inactives sont ignorées.
 - Changer l'entrée d'un écran compatible DDC/CI via son code VCP 0x60.
+- Télécharger jusqu'à huit images de Bing ou sélectionner une liste d'images locales, choisir si les informations système sont ajoutées, puis appliquer les images comme fonds d'écran. Les images préparées, nommées `Image_1`, `Image_2`, etc., sont réutilisées dans `%TEMP%\EventGhostDotNet\Wallpaper` pour éviter l'accumulation de fichiers.
 - Écouter les rapports HID d'un ou plusieurs récepteurs Logitech Unifying ou Bolt, déclencher des événements de touches et de batterie, changer d'hôte et envoyer des rapports bruts.
-- Configurer un menu dans la zone de notification Windows avec des éléments et séparateurs ; par défaut, il propose Afficher EventGhost, Masquer EventGhost et Sortie. Ces choix déclenchent `System.Show`, `System.Hide` et `System.Exit`, traités par l'application.
+- Réduire la fenêtre principale dans la zone de notification avec le bouton de fermeture, puis la restaurer depuis l'icône gérée par l'application.
+- Choisir dans Fichier > Préférences de démarrage si l'application doit s'afficher ou démarrer minimisée dans la zone de notification.
+- Afficher en permanence les commandes Afficher EventGhost, Masquer EventGhost et Sortie dans le menu de l'icône d'application. Elles déclenchent `System.Show`, `System.Hide` et `System.Exit`; elles sont disponibles même sans utiliser le plugin System Tray Menu.
+- Configurer avec le plugin System Tray Menu des entrées personnalisées et leurs événements, ainsi que des séparateurs. Les commandes de l'application ne font pas partie de cette configuration.
 - Exécuter une macro ou déclencher manuellement un événement exact pour exécuter les macros correspondantes.
 - Exécuter l'élément sélectionné : une macro complète ou une action seule.
 - Sélectionner un événement reçu dans le journal pour copier son nom ou l'ajouter aux déclencheurs de la macro sélectionnée ; enregistrer la configuration pour conserver la modification.
 - Déclencher `System.Startup` au démarrage et `System.ConfigurationLoaded` après le chargement ou le rechargement de la configuration.
 - Recharger manuellement la configuration depuis le menu Fichier; les macros en cours sont annulées et les écoutes Logitech de l'ancienne configuration sont libérées avant le remplacement.
 - Enregistrer et recharger les démarrages de plugins et les macros en JSON dans `%LOCALAPPDATA%\EventGhostDotNet\configuration.json`. Les anciens fichiers contenant directement un tableau de macros restent lisibles.
-- À la fermeture, choisir d'enregistrer ou d'abandonner les modifications non enregistrées, ou d'annuler la fermeture.
+- À la sortie réelle de l'application, choisir d'enregistrer ou d'abandonner les modifications non enregistrées, ou d'annuler la fermeture.
 
 Le nouveau document JSON contient `PluginStartups`, `StartupActions` et `Macros`; chaque macro contient une liste `EventNames`, par exemple `"EventNames": ["Unify.Host 1", "Unify.Host 2"]`. Les anciens fichiers où la racine est directement le tableau des macros sont lus et convertis. Les anciens événements système préfixés par `EGDN` sont convertis vers `System.*` au chargement. Les anciens champs `EventName` et `AdditionalEventNames` ne sont plus pris en charge.
 
@@ -45,9 +51,9 @@ Les plugins peuvent lire ou modifier `host.Result` et utiliser `host.Log(...)` o
 
 ## Modules de plugins
 
-L'application découvre les DLL dans le dossier `Plugins` à côté de son exécutable au démarrage. Display, Logitech et System Tray Menu sont compilés et copiés dans ce dossier automatiquement. Pour ajouter un plugin externe, créer une bibliothèque .NET 9 Windows qui référence le projet `PluginContracts` et expose une classe publique sans paramètre implémentant `IPlugin`; placer sa DLL, son fichier `.deps.json` et ses dépendances dans un sous-dossier distinct de `Plugins`, puis redémarrer l'application.
+L'application découvre les DLL dans le dossier `Plugins` à côté de son exécutable au démarrage. Display, Logitech, System Tray Menu et Wallpaper sont compilés et copiés dans ce dossier automatiquement. Le menu System Tray Menu ne fournit que des entrées personnalisées; l'application conserve toujours ses propres commandes et son icône. Pour ajouter un plugin externe, créer une bibliothèque .NET 9 Windows qui référence le projet `PluginContracts` et expose une classe publique sans paramètre implémentant `IPlugin`; placer sa DLL, son fichier `.deps.json` et ses dépendances dans un sous-dossier distinct de `Plugins`, puis redémarrer l'application.
 
-Le plugin fournit un identifiant stable, ses actions et leur formulaire, et exécute ses actions via `IPlugin`. Il peut également fournir des configurations de démarrage et les exécuter avec `StartupAsync`; les plugins sans initialisation spécifique héritent d'un démarrage sans effet. `ResetAsync` doit arrêter et libérer les ressources créées par le plugin : il est appelé lors du rechargement de configuration et avant le redémarrage des configurations. `DisposeAsync` est appelé à la fermeture de l'application. Les anciennes actions Display et Logitech sont reconnues par leurs identifiants existants.
+Le plugin fournit un identifiant stable, ses actions et leur formulaire, et exécute ses actions via `IPlugin`. Il peut également fournir des configurations de démarrage et les exécuter avec `StartupAsync`; les plugins sans initialisation spécifique héritent d'un démarrage sans effet. `ResetAsync` doit arrêter et libérer les ressources créées par le plugin : il est appelé lors du rechargement de configuration et avant le redémarrage des configurations. `DisposeAsync` est appelé à la fermeture de l'application. Les plugins intégrés comprennent Display, Logitech, System Tray Menu et Wallpaper.
 
 Un plugin proposant plusieurs configurations peut aussi implémenter `IPluginInstanceProvider`. Il indique les actions qui dépendent d'une configuration de démarrage, fournit leur nom, associe les anciennes actions à une configuration et lie les actions à la configuration actuelle. L'application conserve un identifiant stable pour chaque démarrage et propose une entrée par configuration dans la liste des actions. Les plugins qui ne l'implémentent pas conservent leur fonctionnement habituel.
 

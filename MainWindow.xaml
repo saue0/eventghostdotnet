@@ -2,21 +2,12 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:EventGhostDotNet"
-        Title="EventGhost .NET" Height="760" Width="1180" Loaded="Window_Loaded" Closing="Window_Closing" Closed="Window_Closed"
+        Title="EventGhost .NET" Height="760" Width="1180" Loaded="Window_Loaded" Closing="Window_Closing"
+        Closed="Window_Closed"
         MinHeight="600" MinWidth="900"
         Background="#F3F5F8" Foreground="#202938"
         FontFamily="Segoe UI">
     <Window.Resources>
-        <SolidColorBrush x:Key="AccentBrush" Color="#2563EB"/>
-        <Style TargetType="Button">
-            <Setter Property="Padding" Value="12,7"/>
-            <Setter Property="Margin" Value="3"/>
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="Foreground" Value="#202938"/>
-            <Setter Property="BorderBrush" Value="#D7DDE6"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Cursor" Value="Hand"/>
-        </Style>
         <Style TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
@@ -24,6 +15,7 @@
             <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
             <Setter Property="Width" Value="28"/>
             <Setter Property="Height" Value="28"/>
+            <Setter Property="MinHeight" Value="0"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Margin" Value="2"/>
         </Style>
@@ -38,7 +30,22 @@
         </Style>
         <Style TargetType="TreeViewItem">
             <Setter Property="IsExpanded" Value="True"/>
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="Margin" Value="1"/>
+            <Setter Property="Background" Value="Transparent"/>
             <EventSetter Event="MouseDoubleClick" Handler="TreeItem_MouseDoubleClick"/>
+            <EventSetter Event="Loaded" Handler="TreeItem_Loaded"/>
+            <EventSetter Event="Expanded" Handler="TreeItem_Expanded"/>
+            <EventSetter Event="Collapsed" Handler="TreeItem_Collapsed"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#F2F6FC"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#DBEAFE"/>
+                    <Setter Property="Foreground" Value="#1D4ED8"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
         <HierarchicalDataTemplate DataType="{x:Type local:StartupSection}" ItemsSource="{Binding Children}">
             <StackPanel Orientation="Horizontal">
@@ -60,6 +67,17 @@
                         ToolTip="Supprimer le démarrage du plugin" AutomationProperties.Name="Supprimer le démarrage du plugin"/>
             </StackPanel>
         </DataTemplate>
+        <HierarchicalDataTemplate DataType="{x:Type local:MacroGroup}" ItemsSource="{Binding Macros}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0"/>
+                <Button Style="{StaticResource ItemIconButton}" Content="&#xE70F;"
+                        Click="RenameMacroGroupItem_Click" ToolTip="Renommer le groupe"
+                        AutomationProperties.Name="Renommer le groupe"/>
+                <Button Style="{StaticResource ItemIconButton}" Content="&#xE74D;"
+                        Click="RemoveMacroGroupItem_Click" Foreground="#B42318"
+                        ToolTip="Supprimer le groupe" AutomationProperties.Name="Supprimer le groupe"/>
+            </StackPanel>
+        </HierarchicalDataTemplate>
         <HierarchicalDataTemplate DataType="{x:Type local:MacroDefinition}" ItemsSource="{Binding TreeChildren}">
             <StackPanel Orientation="Horizontal">
                 <CheckBox IsChecked="{Binding IsEnabled}" VerticalAlignment="Center" Margin="0,0,8,0"
@@ -104,6 +122,7 @@
             <MenuItem Header="_Fichier">
                 <MenuItem Header="_Enregistrer" Click="SaveConfiguration_Click"/>
                 <MenuItem Header="_Recharger la configuration" Click="ReloadConfiguration_Click"/>
+                <MenuItem Header="_Préférences de démarrage" Click="StartupPreferences_Click"/>
                 <Separator/>
                 <MenuItem Header="_Quitter" Click="Exit_Click"/>
             </MenuItem>
@@ -112,16 +131,24 @@
             </MenuItem>
         </Menu>
 
-        <Border DockPanel.Dock="Top" Background="White" BorderBrush="#E0E5EC" BorderThickness="0,0,0,1" Padding="8">
+        <Border DockPanel.Dock="Top" Background="White" BorderBrush="#E0E5EC" BorderThickness="1" CornerRadius="10"
+                Margin="12,8,12,0" Padding="8">
             <WrapPanel>
+                <Button Content="Ajouter un groupe" Click="AddMacroGroup_Click"/>
                 <Button Content="Nouvelle macro" Click="AddMacro_Click"/>
                 <Button x:Name="EditMacroButton" Content="Modifier macro" IsEnabled="False" Click="EditMacro_Click"/>
                 <Button Content="Supprimer macro" Click="RemoveMacro_Click"/>
                 <Button Content="Ajouter action" Click="AddAction_Click"/>
                 <Button x:Name="EditActionButton" Content="Modifier action" IsEnabled="False" Click="EditAction_Click"/>
                 <Button Content="Supprimer action" Click="RemoveAction_Click"/>
-                <Button x:Name="RunSelectionButton" Content="Exécuter" IsEnabled="False"
-                        Background="#2563EB" Foreground="White" BorderBrush="#2563EB" Click="RunMacro_Click"/>
+                <Button x:Name="MoveSelectionUpButton" Content="Monter" IsEnabled="False"
+                        Click="MoveSelectionUp_Click" ToolTip="Monter la macro ou l'action sélectionnée"/>
+                <Button x:Name="MoveSelectionDownButton" Content="Descendre" IsEnabled="False"
+                        Click="MoveSelectionDown_Click" ToolTip="Descendre la macro ou l'action sélectionnée"/>
+                <Button x:Name="MoveMacroToGroupButton" Content="Changer de groupe" IsEnabled="False"
+                        Click="MoveMacroToGroup_Click" ToolTip="Déplacer la macro sélectionnée dans un autre groupe"/>
+                <Button x:Name="RunSelectionButton" Content="Exécuter" Style="{StaticResource PrimaryButton}"
+                        IsEnabled="False" Click="RunMacro_Click"/>
                 <Button Content="Déclencher un événement" Click="SimulateEvent_Click"/>
                 <Button Content="Arrêter les plugins" Click="StopPlugins_Click"/>
                 <Button Content="Enregistrer" Click="SaveConfiguration_Click"/>
@@ -144,7 +171,7 @@
                 <ColumnDefinition Width="3*"/>
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Background="#172033" BorderBrush="#172033" BorderThickness="1" CornerRadius="5" Padding="12">
+            <Border Grid.Column="0" Background="#172033" BorderBrush="#172033" BorderThickness="1" CornerRadius="10" Padding="12">
                 <DockPanel>
                     <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                         <TextBlock Text="Journal d'exécution" Foreground="White" FontSize="14" FontWeight="SemiBold" Margin="0,0,12,0"/>
@@ -158,7 +185,7 @@
 
             <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="Transparent"/>
 
-            <Border Grid.Column="2" Background="White" BorderBrush="#E0E5EC" BorderThickness="1" CornerRadius="5">
+            <Border Grid.Column="2" Background="White" BorderBrush="#E0E5EC" BorderThickness="1" CornerRadius="10">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="Configuration" FontSize="16" FontWeight="SemiBold" Padding="14,12"/>
                     <TreeView x:Name="ConfigurationTree" BorderThickness="0" SelectedItemChanged="ConfigurationTree_SelectedItemChanged"

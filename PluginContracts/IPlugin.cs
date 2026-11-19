@@ -8,6 +8,8 @@ public sealed record PluginActionDescriptor(string Id, string Name);
 
 public sealed record PluginStartupData(string ConfigurationId, string InstanceId, string Value, string Target);
 
+public sealed record PluginTrayMenuItem(string Label, string EventName, bool IsSeparator = false);
+
 public interface IActionContext
 {
     object? Result
@@ -25,6 +27,7 @@ public interface IPluginHost : IActionContext
     Window Owner { get; }
     IReadOnlyList<PluginActionData> GetConfiguredActions(string pluginId);
     IReadOnlyList<PluginStartupData> GetPluginStartupConfigurations(string pluginId) => [];
+    void SetTrayMenuItems(string pluginId, IReadOnlyList<PluginTrayMenuItem> items) { }
 }
 
 public interface IPlugin : IAsyncDisposable

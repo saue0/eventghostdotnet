@@ -7,7 +7,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using EventGhostDotNet.PluginContracts;
-using Forms = System.Windows.Forms;
 using WpfBinding = System.Windows.Data.Binding;
 using WpfButton = System.Windows.Controls.Button;
 using WpfHorizontalAlignment = System.Windows.HorizontalAlignment;
@@ -74,12 +73,8 @@ public sealed class SystemTrayMenuEntry : INotifyPropertyChanged
 public sealed class SystemTrayMenuModule : IPlugin
 {
     private const string StartupConfigurationId = "SystemTrayMenu";
-    private const string ShowEventName = "System.Show";
-    private const string HideEventName = "System.Hide";
-    private const string ExitEventName = "System.Exit";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-    private Forms.NotifyIcon? _notifyIcon;
-    private Forms.ContextMenuStrip? _contextMenu;
+    private IPluginHost? _host;
 
     public string Id => "SystemTrayMenu";
     public string Name => "System Tray Menu";
@@ -88,7 +83,7 @@ public sealed class SystemTrayMenuModule : IPlugin
 
     public PluginStartupData CreateDefaultStartupConfiguration() =>
         new(StartupConfigurationId, Guid.NewGuid().ToString(),
-            JsonSerializer.Serialize(CreateDefaultEntries(), JsonOptions), string.Empty);
+            JsonSerializer.Serialize(Array.Empty<SystemTrayMenuEntry>(), JsonOptions), string.Empty);
 
     public PluginStartupData? ConfigureStartup(PluginStartupData? existing, IPluginHost host)
     {
@@ -103,7 +98,7 @@ public sealed class SystemTrayMenuModule : IPlugin
         try
         {
             entries = new ObservableCollection<SystemTrayMenuEntry>(
-                existing is null ? CreateDefaultEntries() : ReadEntries(existing.Value));
+                existing is null ? [] : ReadEntries(existing.Value));
         }
         catch (JsonException exception)
         {
@@ -141,51 +136,16 @@ public sealed class SystemTrayMenuModule : IPlugin
         cancellationToken.ThrowIfCancellationRequested();
         if (configuration.ConfigurationId != StartupConfigurationId)
             throw new InvalidOperationException($"Configuration de démarrage inconnue : {configuration.ConfigurationId}");
-        if (_notifyIcon is not null)
+        if (_host is not null)
             throw new InvalidOperationException("Le menu de la zone de notification est déjà démarré.");
 
         var entries = ReadEntries(configuration.Value);
         ValidateEntries(entries);
-        var menu = new Forms.ContextMenuStrip();
-        var icon = new Forms.NotifyIcon
-        {
-            Icon = System.Drawing.SystemIcons.Application,
-            Text = Name,
-            ContextMenuStrip = menu
-        };
-
-        try
-        {
-            foreach (var entry in entries)
-            {
-                if (entry.IsSeparator)
-                {
-                    menu.Items.Add(new Forms.ToolStripSeparator());
-                    continue;
-                }
-
-                var eventName = entry.EventName;
-                var menuItem = new Forms.ToolStripMenuItem(entry.Label);
-                menuItem.Click += (_, _) =>
-                {
-                    host.Log($"System Tray Menu : événement « {eventName} » déclenché.");
-                    host.RaiseEvent(eventName, null);
-                };
-                menu.Items.Add(menuItem);
-            }
-
-            icon.Visible = true;
-            _contextMenu = menu;
-            _notifyIcon = icon;
-            host.Log($"{Name} démarré avec {entries.Count(entry => !entry.IsSeparator)} élément(s).");
-        }
-        catch
-        {
-            icon.Dispose();
-            menu.Dispose();
-            throw;
-        }
-
+        host.SetTrayMenuItems(Id, entries
+            .Select(entry => new PluginTrayMenuItem(entry.Label, entry.EventName, entry.IsSeparator))
+            .ToArray());
+        _host = host;
+        host.Log($"{Name} démarré avec {entries.Count(entry => !entry.IsSeparator)} élément(s) personnalisés.");
         return Task.CompletedTask;
     }
 
@@ -200,49 +160,13 @@ public sealed class SystemTrayMenuModule : IPlugin
 
     public Task ResetAsync()
     {
-        var icon = _notifyIcon;
-        var menu = _contextMenu;
-        _notifyIcon = null;
-        _contextMenu = null;
-
-        try
-        {
-            if (icon is not null)
-            {
-                icon.Visible = false;
-                icon.ContextMenuStrip = null;
-            }
-        }
-        finally
-        {
-            icon?.Dispose();
-            menu?.Dispose();
-        }
-
+        var host = _host;
+        _host = null;
+        host?.SetTrayMenuItems(Id, []);
         return Task.CompletedTask;
     }
 
     public async ValueTask DisposeAsync() => await ResetAsync();
-
-    private static List<SystemTrayMenuEntry> CreateDefaultEntries() =>
-    [
-        new()
-        {
-            Label = "Afficher EventGhost",
-            EventName = ShowEventName
-        },
-        new()
-        {
-            Label = "Masquer EventGhost",
-            EventName = HideEventName
-        },
-        new() { IsSeparator = true },
-        new()
-        {
-            Label = "Sortie",
-            EventName = ExitEventName
-        }
-    ];
 
     private static List<SystemTrayMenuEntry> ReadEntries(string? json)
     {
@@ -251,18 +175,23 @@ public sealed class SystemTrayMenuModule : IPlugin
 
         var entries = JsonSerializer.Deserialize<List<SystemTrayMenuEntry>>(json, JsonOptions) ?? [];
         foreach (var entry in entries.Where(entry => entry is not null))
-        {
-            entry.EventName = entry.EventName switch
-            {
-                "EGDN.SystemTray.Show" => ShowEventName,
-                "EGDN.SystemTray.Hide" => HideEventName,
-                "EGDN.SystemTray.Exit" => ExitEventName,
-                _ => entry.EventName
-            };
-        }
+            entry.EventName = NormalizeEventName(entry.EventName);
         ValidateEntries(entries);
-        return entries;
+        return entries.Where(entry => !IsApplicationCommand(entry.EventName)).ToList();
     }
+
+    private static string NormalizeEventName(string eventName) => eventName switch
+    {
+        "EGDN.SystemTray.Show" => "System.Show",
+        "EGDN.SystemTray.Hide" => "System.Hide",
+        "EGDN.SystemTray.Exit" => "System.Exit",
+        _ => eventName
+    };
+
+    private static bool IsApplicationCommand(string eventName) =>
+        string.Equals(eventName, "System.Show", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(eventName, "System.Hide", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(eventName, "System.Exit", StringComparison.OrdinalIgnoreCase);
 
     private static void ValidateEntries(IEnumerable<SystemTrayMenuEntry?> entries)
     {
@@ -300,7 +229,7 @@ public sealed class SystemTrayMenuModule : IPlugin
 
         var description = new TextBlock
         {
-            Text = "Choisissez les éléments du menu et l'événement à déclencher lors d'un clic.",
+            Text = "Configurez uniquement vos entrées personnalisées. Afficher, Masquer et Sortie sont gérés par l'application.",
             Margin = new Thickness(0, 0, 0, 8)
         };
         Grid.SetRow(description, 0);
@@ -434,8 +363,6 @@ public sealed class SystemTrayMenuModule : IPlugin
             try
             {
                 ValidateEntries(entries);
-                if (!entries.Any(entry => !entry.IsSeparator))
-                    throw new JsonException("Ajoutez au moins un élément de menu.");
                 dialog.DialogResult = true;
             }
             catch (JsonException exception)

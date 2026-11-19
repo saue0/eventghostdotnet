@@ -13,6 +13,7 @@ public sealed class StartupSection(
     ObservableCollection<MacroAction> actions)
 {
     public string Name => "Démarrage";
+    public bool IsExpanded { get; set; } = true;
     public CompositeCollection Children { get; } =
     [
         new CollectionContainer { Collection = configurations },
@@ -60,10 +61,47 @@ public sealed class PluginStartupConfiguration : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 }
 
+public sealed class MacroGroup : INotifyPropertyChanged
+{
+    private string _name = "Général";
+    private bool _isExpanded = true;
+
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name
+    {
+        get => _name;
+        set
+        {
+            if (_name == value)
+                return;
+            _name = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Name)));
+        }
+    }
+
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (_isExpanded == value)
+                return;
+            _isExpanded = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExpanded)));
+        }
+    }
+
+    [JsonIgnore]
+    public ObservableCollection<MacroDefinition> Macros { get; } = [];
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
 public sealed class MacroDefinition : INotifyPropertyChanged
 {
     private string _name = string.Empty;
     private bool _isEnabled = true;
+    private bool _isExpanded = true;
     private ObservableCollection<string> _eventNames = [];
     private ObservableCollection<string> _disabledEventNames = [];
     private readonly ObservableCollection<MacroEvent> _eventItems = [];
@@ -72,6 +110,7 @@ public sealed class MacroDefinition : INotifyPropertyChanged
     private readonly CollectionContainer _actionContainer = new();
 
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid GroupId { get; set; }
 
     public bool IsEnabled
     {
@@ -81,6 +120,18 @@ public sealed class MacroDefinition : INotifyPropertyChanged
             if (_isEnabled == value)
                 return;
             _isEnabled = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (_isExpanded == value)
+                return;
+            _isExpanded = value;
             OnPropertyChanged();
         }
     }

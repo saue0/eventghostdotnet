@@ -13,9 +13,24 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Media.Media3D;
+using System.Windows.Interop;
 using Microsoft.VisualBasic;
 using EventGhostDotNet.PluginContracts;
+using Forms = System.Windows.Forms;
+using Brushes = System.Windows.Media.Brushes;
+using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
+using Button = System.Windows.Controls.Button;
+using Clipboard = System.Windows.Clipboard;
+using ComboBox = System.Windows.Controls.ComboBox;
+using FontFamily = System.Windows.Media.FontFamily;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using ListBox = System.Windows.Controls.ListBox;
+using MessageBox = System.Windows.MessageBox;
+using Orientation = System.Windows.Controls.Orientation;
+using RadioButton = System.Windows.Controls.RadioButton;
+using TextBox = System.Windows.Controls.TextBox;
 
 namespace EventGhostDotNet;
 
@@ -28,6 +43,12 @@ public partial class MainWindow : Window
     private const string SystemExitEventName = "System.Exit";
     private const int MaximumMacroCallDepth = 32;
     private const int MaximumActionExecutionsPerMacro = 10000;
+
+    private enum StartupWindowMode
+    {
+        Show,
+        MinimizeToTray
+    }
 
     private sealed record ActionChoice(
         MacroActionKind Kind, string Name, string? PluginId = null, string? ActionId = null, string? InstanceId = null)
@@ -51,7 +72,10 @@ public partial class MainWindow : Window
     {
         public ObservableCollection<PluginStartupConfiguration> PluginStartups { get; set; } = [];
         public ObservableCollection<MacroAction> StartupActions { get; set; } = [];
+        public ObservableCollection<MacroGroup> MacroGroups { get; set; } = [];
         public ObservableCollection<MacroDefinition> Macros { get; set; } = [];
+        public bool StartupSectionExpanded { get; set; } = true;
+        public StartupWindowMode StartupWindowMode { get; set; } = StartupWindowMode.Show;
     }
 
     private sealed class ActionContext(
@@ -98,6 +122,8 @@ public partial class MainWindow : Window
             window.PluginStartups.Where(configuration =>
                     string.Equals(configuration.PluginId, pluginId, StringComparison.OrdinalIgnoreCase))
                 .Select(ToPluginStartupData).ToArray();
+        public void SetTrayMenuItems(string pluginId, IReadOnlyList<PluginTrayMenuItem> items) =>
+            window.SetPluginTrayMenuItems(pluginId, items);
         public void Log(string message) => context.Log(message);
         public void RaiseEvent(string name, string? payload) => context.RaiseEvent(name, payload);
     }
@@ -121,22 +147,38 @@ public partial class MainWindow : Window
     private readonly StartupSection _startupSection;
     private readonly MacroDefinition _startupMacro;
     private readonly CompositeCollection _treeRoots = [];
+    private Forms.NotifyIcon? _applicationTrayIcon;
+    private Forms.ContextMenuStrip? _applicationTrayMenu;
+    private readonly Dictionary<string, IReadOnlyList<PluginTrayMenuItem>> _pluginTrayMenuItems =
+        new(StringComparer.OrdinalIgnoreCase);
+    private StartupWindowMode _startupWindowMode = StartupWindowMode.Show;
+    private bool _isExiting;
 
     public ObservableCollection<MacroDefinition> Macros { get; } = [];
+    public ObservableCollection<MacroGroup> MacroGroups { get; } = [];
     public ObservableCollection<PluginStartupConfiguration> PluginStartups { get; } = [];
     public ObservableCollection<MacroAction> StartupActions { get; } = [];
 
     public MainWindow()
     {
         InitializeComponent();
+        Icon = Imaging.CreateBitmapSourceFromHIcon(
+            System.Drawing.SystemIcons.Application.Handle,
+            Int32Rect.Empty,
+            BitmapSizeOptions.FromWidthAndHeight(32, 32));
         ConfigurationPathText.Text = _configurationPath;
         _startupMacro = new MacroDefinition { Name = "Démarrage", Actions = StartupActions };
         _startupSection = new StartupSection(PluginStartups, StartupActions);
         _treeRoots.Add(_startupSection);
-        _treeRoots.Add(new CollectionContainer { Collection = Macros });
+        _treeRoots.Add(new CollectionContainer { Collection = MacroGroups });
         ConfigurationTree.ItemsSource = _treeRoots;
         _pluginLoader.Load(Path.Combine(AppContext.BaseDirectory, "Plugins"), WriteLog);
         LoadConfiguration();
+        if (_startupWindowMode == StartupWindowMode.MinimizeToTray)
+        {
+            WindowState = WindowState.Minimized;
+            ShowInTaskbar = false;
+        }
         _cleanConfiguration = SerializeConfiguration();
     }
 
@@ -147,11 +189,174 @@ public partial class MainWindow : Window
         if (details is null)
             return;
 
+        var group = GetSelectedMacroGroup() ?? MacroGroups.FirstOrDefault();
+        if (group is null)
+            throw new InvalidOperationException("Aucun groupe de macros n'est disponible.");
+
         var macro = new MacroDefinition { Name = details.Value.Name };
         macro.SetEventNames(details.Value.EventNames);
-        Macros.Add(macro);
+        AddMacroToGroup(macro, group);
         SelectTreeItem(macro);
         WriteLog($"Macro créée : {macro.Name} (événements : {DescribeMacroEvents(macro)}).");
+    }
+
+    private MacroGroup? GetSelectedMacroGroup() => ConfigurationTree.SelectedItem switch
+    {
+        MacroGroup group => group,
+        MacroDefinition macro => FindMacroGroup(macro),
+        MacroAction action => FindMacroGroup(
+            Macros.FirstOrDefault(macro => macro.Actions.Contains(action)) ??
+            (StartupActions.Contains(action) ? _startupMacro : null)),
+        _ => null
+    };
+
+    private MacroGroup? FindMacroGroup(MacroDefinition? macro) =>
+        macro is null ? null : MacroGroups.FirstOrDefault(group => group.Id == macro.GroupId);
+
+    private void AddMacroToGroup(MacroDefinition macro, MacroGroup group)
+    {
+        macro.GroupId = group.Id;
+        group.Macros.Add(macro);
+        SynchronizeMacroOrder();
+    }
+
+    private void SynchronizeMacroOrder()
+    {
+        var orderedMacros = MacroGroups.SelectMany(group => group.Macros).ToArray();
+        for (var index = 0; index < orderedMacros.Length; index++)
+        {
+            var currentIndex = Macros.IndexOf(orderedMacros[index]);
+            if (currentIndex < 0)
+                Macros.Insert(index, orderedMacros[index]);
+            else if (currentIndex != index)
+                Macros.Move(currentIndex, index);
+        }
+        while (Macros.Count > orderedMacros.Length)
+            Macros.RemoveAt(Macros.Count - 1);
+    }
+
+    private void AddMacroGroup_Click(object sender, RoutedEventArgs e)
+    {
+        var name = PromptForText("Ajouter un groupe", "Nom du groupe :", "Nouveau groupe")?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+        if (MacroGroups.Any(group => string.Equals(group.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show(this, "Un groupe porte déjà ce nom.", "Nom de groupe en double",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var group = new MacroGroup { Name = name };
+        MacroGroups.Add(group);
+        SelectMacroGroup(group);
+        UpdateMoveSelectionButtons(group);
+        WriteLog($"Groupe créé : {group.Name}.");
+    }
+
+    private void RenameMacroGroupItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: MacroGroup group })
+            return;
+
+        SelectMacroGroup(group);
+        var name = PromptForText("Renommer le groupe", "Nom du groupe :", group.Name)?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+        if (MacroGroups.Any(item => item.Id != group.Id &&
+                                    string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show(this, "Un groupe porte déjà ce nom.", "Nom de groupe en double",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        group.Name = name;
+        WriteLog($"Groupe renommé : {group.Name}.");
+    }
+
+    private void RemoveMacroGroupItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: MacroGroup group })
+            return;
+        SelectMacroGroup(group);
+        if (MacroGroups.Count <= 1)
+        {
+            MessageBox.Show(this, "Il doit rester au moins un groupe de macros.", "Suppression impossible",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (group.Macros.Count > 0)
+        {
+            MessageBox.Show(this, "Déplacez ou supprimez les macros de ce groupe avant de le supprimer.",
+                "Groupe non vide", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        if (MessageBox.Show(this, $"Supprimer le groupe « {group.Name} » ?", "Confirmation",
+                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        MacroGroups.Remove(group);
+        SelectMacroGroup(MacroGroups[0]);
+        UpdateMoveSelectionButtons(MacroGroups[0]);
+        WriteLog($"Groupe supprimé : {group.Name}.");
+    }
+
+    private void MoveMacroToGroup_Click(object sender, RoutedEventArgs e)
+    {
+        if (ConfigurationTree.SelectedItem is not MacroDefinition macro ||
+            FindMacroGroup(macro) is not MacroGroup currentGroup)
+            return;
+
+        var destinationGroups = MacroGroups.Where(group => group.Id != currentGroup.Id).ToArray();
+        if (destinationGroups.Length == 0)
+            return;
+
+        var dialog = new Window
+        {
+            Title = "Déplacer la macro",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+            Padding = new Thickness(18)
+        };
+        var panel = new StackPanel { Width = 360 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"Choisissez le groupe de destination pour « {macro.Name} » :",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 8)
+        });
+        var groupPicker = new System.Windows.Controls.ComboBox
+        {
+            ItemsSource = destinationGroups,
+            DisplayMemberPath = nameof(MacroGroup.Name),
+            SelectedIndex = 0,
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        panel.Children.Add(groupPicker);
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
+        var move = new Button { Content = "Déplacer", IsDefault = true };
+        move.Click += (_, _) => dialog.DialogResult = true;
+        buttons.Children.Add(move);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+        if (dialog.ShowDialog() != true || groupPicker.SelectedItem is not MacroGroup destinationGroup)
+            return;
+
+        currentGroup.Macros.Remove(macro);
+        macro.GroupId = destinationGroup.Id;
+        destinationGroup.Macros.Add(macro);
+        SynchronizeMacroOrder();
+        SelectTreeItem(macro);
+        UpdateMoveSelectionButtons(macro);
+        WriteLog($"Macro « {macro.Name} » déplacée dans « {destinationGroup.Name} ».");
     }
 
     private static string DescribeMacroEvents(MacroDefinition macro) =>
@@ -166,6 +371,7 @@ public partial class MainWindow : Window
                 MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
             return;
 
+        FindMacroGroup(macro)?.Macros.Remove(macro);
         Macros.Remove(macro);
         RefreshPluginDescriptions(Macros);
         RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
@@ -1008,6 +1214,7 @@ public partial class MainWindow : Window
 
         if (string.Equals(eventName, SystemShowEventName, StringComparison.OrdinalIgnoreCase))
         {
+            ShowInTaskbar = true;
             if (!IsVisible)
                 Show();
             if (WindowState == WindowState.Minimized)
@@ -1034,13 +1241,16 @@ public partial class MainWindow : Window
             await ExecuteMacroInSessionAsync(macro, cancellationToken);
         }
         if (exitAfterEvent && !cancellationToken.IsCancellationRequested)
+        {
+            _isExiting = true;
             Close();
+        }
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        if (Macros.Count > 0)
-            SelectTreeItem(Macros[0]);
+        SelectStartupSection();
+        EnsureApplicationTrayIcon();
         try
         {
             await StartConfiguredPluginsAsync();
@@ -1050,6 +1260,8 @@ public partial class MainWindow : Window
             MessageBox.Show(this, exception.Message, "Erreur de démarrage de plugin",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
+        if (_startupWindowMode == StartupWindowMode.MinimizeToTray)
+            Hide();
         await ExecuteStartupActionsAsync();
         await DispatchEventAsync(ConfigurationLoadedEventName, null);
         await DispatchEventAsync(ApplicationStartupEventName, null);
@@ -1074,6 +1286,13 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
+        if (!_isExiting)
+        {
+            e.Cancel = true;
+            Dispatcher.BeginInvoke(new Action(() => _ = DispatchEventAsync(SystemHideEventName, null)));
+            return;
+        }
+
         if (SerializeConfiguration() == _cleanConfiguration)
             return;
 
@@ -1083,7 +1302,10 @@ public partial class MainWindow : Window
             "Modifications non enregistrées", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning,
             MessageBoxResult.Cancel);
         if (result == MessageBoxResult.Cancel || (result == MessageBoxResult.Yes && !SaveConfiguration()))
+        {
             e.Cancel = true;
+            _isExiting = false;
+        }
     }
 
     private async void Window_Closed(object? sender, EventArgs e)
@@ -1108,7 +1330,127 @@ public partial class MainWindow : Window
                 WriteLog($"Erreur de fermeture du plugin {plugin.Id} : {exception.Message}");
             }
         }
+        DisposeApplicationTrayIcon();
         _sessionCancellation.Dispose();
+    }
+
+    private void EnsureApplicationTrayIcon()
+    {
+        if (_applicationTrayIcon is not null)
+            return;
+
+        var icon = new Forms.NotifyIcon
+        {
+            Icon = System.Drawing.SystemIcons.Application,
+            Text = "EventGhost .NET"
+        };
+        icon.DoubleClick += (_, _) => RaiseSystemTrayEvent(SystemShowEventName);
+        _applicationTrayIcon = icon;
+        RebuildApplicationTrayMenu();
+        icon.Visible = true;
+    }
+
+    private void SetPluginTrayMenuItems(string pluginId, IReadOnlyList<PluginTrayMenuItem> items)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pluginId);
+        ArgumentNullException.ThrowIfNull(items);
+        var snapshot = items.ToArray();
+        if (snapshot.Any(item => item is null ||
+                (!item.IsSeparator && (string.IsNullOrWhiteSpace(item.Label) ||
+                                       string.IsNullOrWhiteSpace(item.EventName)))))
+            throw new ArgumentException("Les éléments du menu doivent avoir un libellé et un événement.", nameof(items));
+
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(new Action(() => SetPluginTrayMenuItems(pluginId, snapshot)));
+            return;
+        }
+
+        if (snapshot.Any(item => !item.IsSeparator))
+            _pluginTrayMenuItems[pluginId] = snapshot;
+        else
+            _pluginTrayMenuItems.Remove(pluginId);
+        RebuildApplicationTrayMenu();
+    }
+
+    private void RebuildApplicationTrayMenu()
+    {
+        if (_applicationTrayIcon is null)
+            return;
+
+        var menu = new Forms.ContextMenuStrip();
+        menu.Items.Add(new Forms.ToolStripMenuItem("Afficher EventGhost", null,
+            (_, _) => RaiseSystemTrayEvent(SystemShowEventName)));
+        menu.Items.Add(new Forms.ToolStripMenuItem("Masquer EventGhost", null,
+            (_, _) => RaiseSystemTrayEvent(SystemHideEventName)));
+        menu.Items.Add(new Forms.ToolStripSeparator());
+
+        var customItems = _pluginTrayMenuItems
+            .OrderBy(plugin => plugin.Key, StringComparer.OrdinalIgnoreCase)
+            .SelectMany(plugin => plugin.Value)
+            .ToList();
+        var normalizedItems = new List<PluginTrayMenuItem>();
+        foreach (var item in customItems)
+        {
+            if (item.IsSeparator)
+            {
+                if (normalizedItems.Count > 0 && !normalizedItems[^1].IsSeparator)
+                    normalizedItems.Add(item);
+            }
+            else
+            {
+                normalizedItems.Add(item);
+            }
+        }
+        while (normalizedItems.Count > 0 && normalizedItems[^1].IsSeparator)
+            normalizedItems.RemoveAt(normalizedItems.Count - 1);
+
+        if (normalizedItems.Count > 0)
+        {
+            foreach (var item in normalizedItems)
+            {
+                if (item.IsSeparator)
+                {
+                    menu.Items.Add(new Forms.ToolStripSeparator());
+                    continue;
+                }
+
+                var menuItem = new Forms.ToolStripMenuItem(item.Label);
+                menuItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    WriteLog($"System Tray Menu : événement « {item.EventName} » déclenché.");
+                    _ = DispatchEventAsync(item.EventName, null);
+                }));
+                menu.Items.Add(menuItem);
+            }
+            menu.Items.Add(new Forms.ToolStripSeparator());
+        }
+
+        menu.Items.Add(new Forms.ToolStripMenuItem("Sortie", null,
+            (_, _) => RaiseSystemTrayEvent(SystemExitEventName)));
+        var previousMenu = _applicationTrayMenu;
+        _applicationTrayIcon.ContextMenuStrip = menu;
+        _applicationTrayMenu = menu;
+        previousMenu?.Dispose();
+    }
+
+    private void RaiseSystemTrayEvent(string eventName) =>
+        Dispatcher.BeginInvoke(new Action(() => _ = DispatchEventAsync(eventName, null)));
+
+    private void DisposeApplicationTrayIcon()
+    {
+        var icon = _applicationTrayIcon;
+        var menu = _applicationTrayMenu;
+        _applicationTrayIcon = null;
+        _applicationTrayMenu = null;
+        if (icon is not null)
+        {
+            icon.Visible = false;
+            icon.ContextMenuStrip = null;
+        }
+        icon?.Dispose();
+        menu?.Dispose();
+        _pluginTrayMenuItems.Clear();
     }
 
     private async Task ResetPluginsAsync()
@@ -1194,14 +1536,176 @@ public partial class MainWindow : Window
         RunSelectionButton.IsEnabled = e.NewValue is MacroDefinition or MacroAction;
         EditActionButton.IsEnabled = e.NewValue is MacroAction selectedAction &&
                                      selectedAction.Kind != MacroActionKind.Beep;
+        UpdateMoveSelectionButtons(e.NewValue);
+    }
+
+    private void UpdateMoveSelectionButtons(object? selectedItem)
+    {
+        var index = -1;
+        var count = 0;
+        switch (selectedItem)
+        {
+            case MacroGroup group:
+                index = MacroGroups.IndexOf(group);
+                count = MacroGroups.Count;
+                break;
+            case MacroDefinition macro:
+                var ownerGroup = FindMacroGroup(macro);
+                if (ownerGroup is not null)
+                {
+                    index = ownerGroup.Macros.IndexOf(macro);
+                    count = ownerGroup.Macros.Count;
+                }
+                break;
+            case MacroAction action:
+                var ownerMacro = Macros.FirstOrDefault(macro => macro.Actions.Contains(action));
+                if (ownerMacro is not null)
+                {
+                    index = ownerMacro.Actions.IndexOf(action);
+                    count = ownerMacro.Actions.Count;
+                }
+                else if (StartupActions.Contains(action))
+                {
+                    index = StartupActions.IndexOf(action);
+                    count = StartupActions.Count;
+                }
+                break;
+        }
+
+        MoveSelectionUpButton.IsEnabled = index > 0;
+        MoveSelectionDownButton.IsEnabled = index >= 0 && index < count - 1;
+        MoveMacroToGroupButton.IsEnabled = selectedItem is MacroDefinition && MacroGroups.Count > 1;
+    }
+
+    private void MoveSelectionUp_Click(object sender, RoutedEventArgs e) => MoveSelectedItem(-1);
+
+    private void MoveSelectionDown_Click(object sender, RoutedEventArgs e) => MoveSelectedItem(1);
+
+    private void MoveSelectedItem(int offset)
+    {
+        switch (ConfigurationTree.SelectedItem)
+        {
+            case MacroGroup group when MoveItem(MacroGroups, group, offset):
+                SynchronizeMacroOrder();
+                SelectMacroGroup(group);
+                UpdateMoveSelectionButtons(group);
+                WriteLog($"Groupe « {group.Name} » déplacé à la position {MacroGroups.IndexOf(group) + 1}.");
+                break;
+            case MacroDefinition macro:
+                var ownerGroup = FindMacroGroup(macro);
+                if (ownerGroup is null || !MoveItem(ownerGroup.Macros, macro, offset))
+                    return;
+                SynchronizeMacroOrder();
+                SelectTreeItem(macro);
+                UpdateMoveSelectionButtons(macro);
+                WriteLog($"Macro « {macro.Name} » déplacée à la position {ownerGroup.Macros.IndexOf(macro) + 1} " +
+                         $"dans « {ownerGroup.Name} ».");
+                break;
+            case MacroAction action:
+                var ownerMacro = Macros.FirstOrDefault(macro => macro.Actions.Contains(action)) ??
+                                 (StartupActions.Contains(action) ? _startupMacro : null);
+                if (ownerMacro is null || !MoveItem(ownerMacro.Actions, action, offset))
+                    return;
+                if (ReferenceEquals(ownerMacro, _startupMacro))
+                    SelectStartupActionItem(action);
+                else
+                    SelectTreeItem(ownerMacro, action);
+                UpdateMoveSelectionButtons(action);
+                WriteLog($"Action déplacée à la position {ownerMacro.Actions.IndexOf(action) + 1} " +
+                         $"dans « {ownerMacro.Name} ».");
+                break;
+        }
+    }
+
+    private static bool MoveItem<T>(ObservableCollection<T> items, T item, int offset)
+    {
+        var currentIndex = items.IndexOf(item);
+        var newIndex = currentIndex + offset;
+        if (currentIndex < 0 || newIndex < 0 || newIndex >= items.Count)
+            return false;
+        items.Move(currentIndex, newIndex);
+        return true;
+    }
+
+    private void SelectMacroGroup(MacroGroup group)
+    {
+        group.IsExpanded = true;
+        ConfigurationTree.UpdateLayout();
+        if (ConfigurationTree.ItemContainerGenerator.ContainerFromItem(group) is not TreeViewItem item)
+            return;
+        item.IsExpanded = true;
+        item.IsSelected = true;
+        item.BringIntoView();
+    }
+
+    private void TreeItem_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not TreeViewItem item)
+            return;
+        switch (item.DataContext)
+        {
+            case StartupSection section:
+                item.IsExpanded = section.IsExpanded;
+                break;
+            case MacroGroup group:
+                item.IsExpanded = group.IsExpanded;
+                break;
+            case MacroDefinition macro:
+                item.IsExpanded = macro.IsExpanded;
+                break;
+        }
+    }
+
+    private void TreeItem_Expanded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not TreeViewItem item || !item.IsLoaded || !ReferenceEquals(item, e.OriginalSource))
+            return;
+        switch (item.DataContext)
+        {
+            case StartupSection section:
+                section.IsExpanded = true;
+                break;
+            case MacroGroup group:
+                group.IsExpanded = true;
+                break;
+            case MacroDefinition macro:
+                macro.IsExpanded = true;
+                break;
+        }
+    }
+
+    private void TreeItem_Collapsed(object sender, RoutedEventArgs e)
+    {
+        if (sender is not TreeViewItem item || !item.IsLoaded || !ReferenceEquals(item, e.OriginalSource))
+            return;
+        switch (item.DataContext)
+        {
+            case StartupSection section:
+                section.IsExpanded = false;
+                break;
+            case MacroGroup group:
+                group.IsExpanded = false;
+                break;
+            case MacroDefinition macro:
+                macro.IsExpanded = false;
+                break;
+        }
     }
 
     private void SelectTreeItem(MacroDefinition macro, object? item = null)
     {
+        var group = FindMacroGroup(macro);
+        if (group is null)
+            return;
+        group.IsExpanded = true;
         ConfigurationTree.UpdateLayout();
-        if (ConfigurationTree.ItemContainerGenerator.ContainerFromItem(macro) is not TreeViewItem parent)
+        if (ConfigurationTree.ItemContainerGenerator.ContainerFromItem(group) is not TreeViewItem groupItem)
             return;
 
+        groupItem.IsExpanded = true;
+        groupItem.UpdateLayout();
+        if (groupItem.ItemContainerGenerator.ContainerFromItem(macro) is not TreeViewItem parent)
+            return;
         if (item is null)
         {
             parent.IsSelected = true;
@@ -1370,7 +1874,6 @@ public partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             ResizeMode = ResizeMode.NoResize,
             SizeToContent = SizeToContent.WidthAndHeight,
-            Background = Brushes.White,
             Padding = new Thickness(18)
         };
         var panel = new StackPanel { Width = 320 };
@@ -1432,6 +1935,13 @@ public partial class MainWindow : Window
         ConfigurationTree.UpdateLayout();
         if (ConfigurationTree.ItemContainerGenerator.ContainerFromItem(_startupSection) is TreeViewItem item)
             item.IsSelected = true;
+    }
+
+    private void SetStartupSectionExpanded(bool isExpanded)
+    {
+        _startupSection.IsExpanded = isExpanded;
+        if (ConfigurationTree.ItemContainerGenerator.ContainerFromItem(_startupSection) is TreeViewItem item)
+            item.IsExpanded = isExpanded;
     }
 
     private void EditMacroItem_Click(object sender, RoutedEventArgs e)
@@ -1544,7 +2054,7 @@ public partial class MainWindow : Window
 
     private void TreeItem_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (IsItemControl(e.OriginalSource) || sender is not TreeViewItem item)
+        if (e.Handled || IsItemControl(e.OriginalSource) || sender is not TreeViewItem item)
             return;
         e.Handled = true;
         item.IsSelected = true;
@@ -1810,21 +2320,22 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
+        MacroGroups.Clear();
         Macros.Clear();
         PluginStartups.Clear();
         StartupActions.Clear();
+        _startupWindowMode = newConfiguration.StartupWindowMode;
         foreach (var configuration in newConfiguration.PluginStartups)
             PluginStartups.Add(configuration);
         foreach (var action in newConfiguration.StartupActions)
             StartupActions.Add(action);
-        foreach (var macro in newConfiguration.Macros)
-            Macros.Add(macro);
+        LoadMacroCollections(newConfiguration);
+        SetStartupSectionExpanded(newConfiguration.StartupSectionExpanded);
         RefreshPluginStartupDescriptions();
         RefreshPluginDescriptions(Macros);
         RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
         _cleanConfiguration = SerializeConfiguration();
-        if (Macros.Count > 0)
-            SelectTreeItem(Macros[0]);
+        SelectStartupSection();
 
         WriteLog($"Configuration rechargée : {Macros.Count} macro(s).");
         try
@@ -1840,7 +2351,80 @@ public partial class MainWindow : Window
         await DispatchEventAsync(ConfigurationLoadedEventName, null);
     }
 
-    private void Exit_Click(object sender, RoutedEventArgs e) => Close();
+    private void Exit_Click(object sender, RoutedEventArgs e)
+    {
+        _isExiting = true;
+        Close();
+    }
+
+    private void StartupPreferences_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Window
+        {
+            Title = "Préférences de démarrage",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+            Padding = new Thickness(18)
+        };
+        var panel = new StackPanel { Width = 380 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Au prochain démarrage, que doit faire EventGhost ?",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 12)
+        });
+        var showWindow = new RadioButton
+        {
+            Content = "Afficher la fenêtre",
+            GroupName = "StartupWindowMode",
+            IsChecked = _startupWindowMode == StartupWindowMode.Show,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        var minimizeToTray = new RadioButton
+        {
+            Content = "Démarrer minimisée dans la zone de notification",
+            GroupName = "StartupWindowMode",
+            IsChecked = _startupWindowMode == StartupWindowMode.MinimizeToTray,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        panel.Children.Add(showWindow);
+        panel.Children.Add(minimizeToTray);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Cette préférence est enregistrée avec la configuration.",
+            Foreground = Brushes.Gray,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 12)
+        });
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
+        var save = new Button
+        {
+            Content = "Enregistrer",
+            IsDefault = true
+        };
+        save.Click += (_, _) => dialog.DialogResult = true;
+        buttons.Children.Add(save);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+
+        var previousMode = _startupWindowMode;
+        if (dialog.ShowDialog() != true)
+            return;
+
+        _startupWindowMode = minimizeToTray.IsChecked == true
+            ? StartupWindowMode.MinimizeToTray
+            : StartupWindowMode.Show;
+        if (!SaveConfiguration())
+            _startupWindowMode = previousMode;
+    }
 
     private void About_Click(object sender, RoutedEventArgs e)
     {
@@ -1855,12 +2439,13 @@ public partial class MainWindow : Window
         try
         {
             var configuration = ReadConfiguration();
+            _startupWindowMode = configuration.StartupWindowMode;
             foreach (var startup in configuration.PluginStartups)
                 PluginStartups.Add(startup);
             foreach (var action in configuration.StartupActions)
                 StartupActions.Add(action);
-            foreach (var macro in configuration.Macros)
-                Macros.Add(macro);
+            LoadMacroCollections(configuration);
+            SetStartupSectionExpanded(configuration.StartupSectionExpanded);
             RefreshPluginStartupDescriptions();
             RefreshPluginDescriptions(Macros);
             RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
@@ -1870,15 +2455,22 @@ public partial class MainWindow : Window
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
         {
+            _startupWindowMode = StartupWindowMode.Show;
             WriteLog($"Impossible de charger la configuration : {exception.Message}");
-            Macros.Add(CreateSampleMacro());
+            if (MacroGroups.Count == 0)
+                MacroGroups.Add(new MacroGroup());
+            AddMacroToGroup(CreateSampleMacro(), MacroGroups[0]);
         }
     }
 
     private ConfigurationDocument ReadConfiguration()
     {
         if (!File.Exists(_configurationPath))
-            return new ConfigurationDocument { Macros = [CreateSampleMacro()] };
+        {
+            var initialConfiguration = new ConfigurationDocument { Macros = [CreateSampleMacro()] };
+            NormalizeMacroGroups(initialConfiguration);
+            return initialConfiguration;
+        }
 
         var json = File.ReadAllText(_configurationPath);
         using var document = JsonDocument.Parse(json);
@@ -1895,10 +2487,12 @@ public partial class MainWindow : Window
         };
         configuration.PluginStartups ??= [];
         configuration.StartupActions ??= [];
+        configuration.MacroGroups ??= [];
         configuration.Macros ??= [];
 
         MigrateLegacyStartupActions(configuration);
         MigrateLegacySystemEvents(configuration);
+        NormalizeMacroGroups(configuration);
         foreach (var macro in configuration.Macros)
         {
             if (macro.EventNames.Any(string.IsNullOrWhiteSpace))
@@ -1934,6 +2528,53 @@ public partial class MainWindow : Window
             Actions = configuration.StartupActions
         }));
         return configuration;
+    }
+
+    private static void NormalizeMacroGroups(ConfigurationDocument configuration)
+    {
+        configuration.MacroGroups ??= [];
+        if (configuration.MacroGroups.Any(group => group is null))
+            throw new JsonException("La liste des groupes de macros contient un élément nul.");
+
+        foreach (var group in configuration.MacroGroups)
+        {
+            if (string.IsNullOrWhiteSpace(group.Name))
+                throw new JsonException("Chaque groupe de macros doit avoir un nom.");
+            if (group.Id == Guid.Empty)
+                group.Id = Guid.NewGuid();
+        }
+        if (configuration.MacroGroups.Select(group => group.Id).Distinct().Count() !=
+            configuration.MacroGroups.Count)
+            throw new JsonException("Les identifiants des groupes de macros doivent être uniques.");
+
+        if (configuration.MacroGroups.Count == 0)
+            configuration.MacroGroups.Add(new MacroGroup());
+
+        var groupIds = configuration.MacroGroups.Select(group => group.Id).ToHashSet();
+        var defaultGroupId = configuration.MacroGroups[0].Id;
+        foreach (var macro in configuration.Macros)
+        {
+            if (macro.GroupId == Guid.Empty || !groupIds.Contains(macro.GroupId))
+                macro.GroupId = defaultGroupId;
+        }
+    }
+
+    private void LoadMacroCollections(ConfigurationDocument configuration)
+    {
+        MacroGroups.Clear();
+        Macros.Clear();
+        foreach (var group in configuration.MacroGroups)
+        {
+            group.Macros.Clear();
+            MacroGroups.Add(group);
+        }
+        foreach (var macro in configuration.Macros)
+        {
+            var group = FindMacroGroup(macro)
+                ?? throw new JsonException($"Le groupe de la macro « {macro.Name} » est introuvable.");
+            group.Macros.Add(macro);
+            Macros.Add(macro);
+        }
     }
 
     private static void MigrateLegacySystemEvents(ConfigurationDocument configuration)
@@ -2128,7 +2769,10 @@ public partial class MainWindow : Window
         {
             PluginStartups = PluginStartups,
             StartupActions = StartupActions,
-            Macros = Macros
+            MacroGroups = MacroGroups,
+            Macros = Macros,
+            StartupSectionExpanded = _startupSection.IsExpanded,
+            StartupWindowMode = _startupWindowMode
         }, JsonOptions);
 
     private static MacroDefinition CreateSampleMacro() =>
@@ -2222,7 +2866,6 @@ public partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             SizeToContent = SizeToContent.WidthAndHeight,
             ResizeMode = ResizeMode.NoResize,
-            Background = Brushes.White,
             Padding = new Thickness(16)
         };
         var panel = new StackPanel { Width = 420 };
@@ -2283,9 +2926,7 @@ public partial class MainWindow : Window
         var save = new Button
         {
             Content = "Enregistrer",
-            IsDefault = true,
-            Background = new SolidColorBrush(Color.FromRgb(37, 99, 235)),
-            Foreground = Brushes.White
+            IsDefault = true
         };
         save.Click += (_, _) =>
         {
@@ -2344,8 +2985,7 @@ public partial class MainWindow : Window
             Width = 760,
             Height = 470,
             MinWidth = 680,
-            MinHeight = 400,
-            Background = Brushes.White
+            MinHeight = 400
         };
         var panel = new DockPanel { Margin = new Thickness(16) };
         var warning = new TextBlock
@@ -2368,9 +3008,7 @@ public partial class MainWindow : Window
         var add = new Button
         {
             Content = initialScript is null ? "Ajouter le script" : "Enregistrer le script",
-            IsDefault = true,
-            Background = new SolidColorBrush(Color.FromRgb(37, 99, 235)),
-            Foreground = Brushes.White
+            IsDefault = true
         };
         add.Click += (_, _) =>
         {
@@ -2545,7 +3183,6 @@ public partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             ResizeMode = ResizeMode.NoResize,
             SizeToContent = SizeToContent.WidthAndHeight,
-            Background = Brushes.White,
             Padding = new Thickness(18)
         };
         var panel = new StackPanel { Width = 300 };
@@ -2598,7 +3235,7 @@ public partial class MainWindow : Window
             Margin = new Thickness(0, 14, 0, 0)
         };
         var cancel = new Button { Content = "Annuler", IsCancel = true };
-        var add = new Button { Content = "Ajouter", IsDefault = true, Background = new SolidColorBrush(Color.FromRgb(37, 99, 235)), Foreground = Brushes.White };
+        var add = new Button { Content = "Ajouter", IsDefault = true };
         add.Click += (_, _) => dialog.DialogResult = true;
         buttons.Children.Add(cancel);
         buttons.Children.Add(add);
