@@ -148,6 +148,7 @@ public partial class MainWindow : Window
     private readonly MacroDefinition _startupMacro;
     private readonly CompositeCollection _treeRoots = [];
     private Forms.NotifyIcon? _applicationTrayIcon;
+    private System.Drawing.Icon? _applicationTrayImage;
     private Forms.ContextMenuStrip? _applicationTrayMenu;
     private readonly Dictionary<string, IReadOnlyList<PluginTrayMenuItem>> _pluginTrayMenuItems =
         new(StringComparer.OrdinalIgnoreCase);
@@ -162,10 +163,6 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        Icon = Imaging.CreateBitmapSourceFromHIcon(
-            System.Drawing.SystemIcons.Application.Handle,
-            Int32Rect.Empty,
-            BitmapSizeOptions.FromWidthAndHeight(32, 32));
         ConfigurationPathText.Text = _configurationPath;
         _startupMacro = new MacroDefinition { Name = "Démarrage", Actions = StartupActions };
         _startupSection = new StartupSection(PluginStartups, StartupActions);
@@ -259,6 +256,11 @@ public partial class MainWindow : Window
         if (sender is not Button { DataContext: MacroGroup group })
             return;
 
+        RenameMacroGroup(group);
+    }
+
+    private void RenameMacroGroup(MacroGroup group)
+    {
         SelectMacroGroup(group);
         var name = PromptForText("Renommer le groupe", "Nom du groupe :", group.Name)?.Trim();
         if (string.IsNullOrWhiteSpace(name))
@@ -1339,13 +1341,16 @@ public partial class MainWindow : Window
         if (_applicationTrayIcon is not null)
             return;
 
+        var trayImage = new System.Drawing.Icon(
+            Path.Combine(AppContext.BaseDirectory, "Assets", "EventGhostDotNet.ico"));
         var icon = new Forms.NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = trayImage,
             Text = "EventGhost .NET"
         };
         icon.DoubleClick += (_, _) => RaiseSystemTrayEvent(SystemShowEventName);
         _applicationTrayIcon = icon;
+        _applicationTrayImage = trayImage;
         RebuildApplicationTrayMenu();
         icon.Visible = true;
     }
@@ -1440,8 +1445,10 @@ public partial class MainWindow : Window
     private void DisposeApplicationTrayIcon()
     {
         var icon = _applicationTrayIcon;
+        var trayImage = _applicationTrayImage;
         var menu = _applicationTrayMenu;
         _applicationTrayIcon = null;
+        _applicationTrayImage = null;
         _applicationTrayMenu = null;
         if (icon is not null)
         {
@@ -1449,6 +1456,7 @@ public partial class MainWindow : Window
             icon.ContextMenuStrip = null;
         }
         icon?.Dispose();
+        trayImage?.Dispose();
         menu?.Dispose();
         _pluginTrayMenuItems.Clear();
     }
@@ -2054,36 +2062,50 @@ public partial class MainWindow : Window
 
     private void TreeItem_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (e.Handled || IsItemControl(e.OriginalSource) || sender is not TreeViewItem item)
+        if (e.Handled || sender is not TreeViewItem item ||
+            ShouldIgnoreTreeItemDoubleClick(e.OriginalSource, item))
             return;
+
+        var dataContext = item.DataContext;
+        if (dataContext is not (PluginStartupConfiguration or MacroEvent or MacroAction or MacroDefinition or MacroGroup))
+            return;
+
         e.Handled = true;
         item.IsSelected = true;
-        if (item.DataContext is PluginStartupConfiguration startupConfiguration)
+
+        switch (dataContext)
         {
-            if (startupConfiguration.CanConfigure)
+            case PluginStartupConfiguration startupConfiguration when startupConfiguration.CanConfigure:
                 _ = EditPluginStartupAsync(startupConfiguration);
+                break;
+            case MacroEvent macroEvent:
+                EditEvent(macroEvent);
+                break;
+            case MacroAction action:
+                if (action.Kind == MacroActionKind.Beep)
+                    MessageBox.Show(this, "Cette action n'a pas de paramètres à modifier.", "Modification impossible",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                else
+                    EditAction_Click(sender, e);
+                break;
+            case MacroDefinition:
+                EditMacro_Click(sender, e);
+                break;
+            case MacroGroup group:
+                RenameMacroGroup(group);
+                break;
         }
-        else if (item.DataContext is MacroEvent macroEvent)
-            EditEvent(macroEvent);
-        else if (item.DataContext is MacroAction action)
-        {
-            if (action.Kind == MacroActionKind.Beep)
-                MessageBox.Show(this, "Cette action n'a pas de paramètres à modifier.", "Modification impossible",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
-            else
-                EditAction_Click(sender, e);
-        }
-        else if (_selectedMacro is not null)
-            EditMacro_Click(sender, e);
     }
 
-    private static bool IsItemControl(object source)
+    private static bool ShouldIgnoreTreeItemDoubleClick(object source, TreeViewItem item)
     {
         var current = source as DependencyObject;
-        while (current is not null && current is not TreeViewItem)
+        while (current is not null)
         {
             if (current is ButtonBase)
                 return true;
+            if (current is TreeViewItem sourceItem)
+                return !ReferenceEquals(sourceItem, item);
             current = current switch
             {
                 Visual or Visual3D => VisualTreeHelper.GetParent(current),

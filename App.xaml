@@ -10,6 +10,7 @@
         <SolidColorBrush x:Key="PrimaryTextBrush" Color="#202938"/>
 
         <Style TargetType="{x:Type Window}">
+            <Setter Property="Icon" Value="Assets/EventGhostDotNet.ico"/>
             <Setter Property="Background" Value="{StaticResource WindowBackgroundBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource PrimaryTextBrush}"/>
             <Setter Property="FontFamily" Value="Segoe UI"/>
