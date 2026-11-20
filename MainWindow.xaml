@@ -118,6 +118,17 @@
                         <Button Content="Copier le nom de l'événement" Click="CopyEventName_Click"/>
                         <Button Content="Ajouter à la macro sélectionnée" Click="AssignEventName_Click"/>
                     </WrapPanel>
+                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <TextBlock Text="Niveaux :" Foreground="White" Margin="0,0,10,0"/>
+                        <CheckBox x:Name="LogDebugFilter" Content="Debug" IsChecked="True" Foreground="LightGray"
+                                  Margin="0,0,10,0" Checked="LogFilter_Changed" Unchecked="LogFilter_Changed"/>
+                        <CheckBox x:Name="LogInformationFilter" Content="Information" IsChecked="True" Foreground="LightSkyBlue"
+                                  Margin="0,0,10,0" Checked="LogFilter_Changed" Unchecked="LogFilter_Changed"/>
+                        <CheckBox x:Name="LogWarningFilter" Content="Avertissement" IsChecked="True" Foreground="Orange"
+                                  Margin="0,0,10,0" Checked="LogFilter_Changed" Unchecked="LogFilter_Changed"/>
+                        <CheckBox x:Name="LogErrorFilter" Content="Erreur" IsChecked="True" Foreground="Salmon"
+                                  Margin="0,0,10,0" Checked="LogFilter_Changed" Unchecked="LogFilter_Changed"/>
+                    </WrapPanel>
                     <ListBox x:Name="LogList" Background="#172033" Foreground="#DDE6F4" BorderThickness="0" FontFamily="Consolas" FontSize="12"
                              SelectionMode="Extended" ScrollViewer.HorizontalScrollBarVisibility="Auto" Loaded="LogList_Loaded"
                              PreviewMouseLeftButtonDown="LogList_PreviewMouseLeftButtonDown"

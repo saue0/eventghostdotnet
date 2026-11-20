@@ -72,6 +72,7 @@ public partial class MainWindow : Window
             };
             var prefix = $"{symbol} [{label}] [{timestamp}] ";
             EventName = eventName;
+            Level = level;
             Display = new TextBlock { Foreground = color };
             Display.Inlines.Add(new Run(prefix));
             var text = new System.Text.StringBuilder(prefix);
@@ -89,6 +90,7 @@ public partial class MainWindow : Window
         }
 
         public string? EventName { get; }
+        public LogLevel Level { get; }
         public TextBlock Display { get; }
         public string Text { get; }
         public override string ToString() => Text;
@@ -189,6 +191,8 @@ public partial class MainWindow : Window
         "EventGhostDotNet",
         "configuration.json");
     private readonly PluginLoader _pluginLoader = new();
+    private readonly ObservableCollection<EventLogEntry> _logEntries = [];
+    private ICollectionView? _logView;
     private readonly HashSet<Task> _activeMacroExecutions = [];
     private readonly SemaphoreSlim _pluginLifecycleGate = new(1, 1);
     private CancellationTokenSource _sessionCancellation = new();
@@ -217,6 +221,16 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _logView = CollectionViewSource.GetDefaultView(_logEntries);
+        _logView.Filter = item => item is EventLogEntry entry && entry.Level switch
+        {
+            LogLevel.Debug => LogDebugFilter.IsChecked == true,
+            LogLevel.Information => LogInformationFilter.IsChecked == true,
+            LogLevel.Warning => LogWarningFilter.IsChecked == true,
+            LogLevel.Error => LogErrorFilter.IsChecked == true,
+            _ => false
+        };
+        LogList.ItemsSource = _logView;
         ConfigurationPathText.Text = _configurationPath;
         _startupSection = new StartupSection();
         _startupMacro = new MacroDefinition(StartupActions) { Name = "Démarrage" };
@@ -1503,7 +1517,16 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ClearLog_Click(object sender, RoutedEventArgs e) => LogList.Items.Clear();
+    private void ClearLog_Click(object sender, RoutedEventArgs e) => _logEntries.Clear();
+
+    private void LogFilter_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_logView is null)
+            return;
+
+        _logView.Refresh();
+        ScrollLogToEnd();
+    }
 
     private void WriteLog(string message) => WriteLog(message, null);
 
@@ -1537,9 +1560,9 @@ public partial class MainWindow : Window
         string message, string? eventName, AnsiLogFormatter? formatter = null, LogLevel level = LogLevel.Information)
     {
         var timestamp = DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-        LogList.Items.Add(new EventLogEntry(timestamp, message, eventName, formatter ?? new AnsiLogFormatter(), level));
-        while (LogList.Items.Count > 500)
-            LogList.Items.RemoveAt(0);
+        _logEntries.Add(new EventLogEntry(timestamp, message, eventName, formatter ?? new AnsiLogFormatter(), level));
+        while (_logEntries.Count > 500)
+            _logEntries.RemoveAt(0);
         ScrollLogToEnd();
     }
 
