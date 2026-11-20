@@ -18,6 +18,8 @@
     <Resource Include="Assets\EventGhostDotNet.ico" />
     <Content Include="Assets\EventGhostDotNet.ico" CopyToOutputDirectory="PreserveNewest" />
     <None Remove="Plugins\**\bin\**;Plugins\**\obj\**;PluginContracts\**\bin\**;PluginContracts\**\obj\**" />
+    <None Update="README.md;Plugins\CREER_UN_PLUGIN.md;Plugins\*\README.md"
+          CopyToPublishDirectory="Always" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
   <ItemGroup>
@@ -28,10 +30,13 @@
     <ProjectReference Include="Plugins\Logitech\Logitech.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
     <ProjectReference Include="Plugins\SystemTrayMenu\SystemTrayMenu.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
     <ProjectReference Include="Plugins\Wallpaper\Wallpaper.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
+    <ProjectReference Include="Plugins\Scheduler\Scheduler.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
+    <ProjectReference Include="Plugins\FileWatcher\FileWatcher.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
+    <ProjectReference Include="Plugins\ProcessWatcher\ProcessWatcher.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
   </ItemGroup>
 
   <Target Name="CopyBuiltInPlugins" AfterTargets="Build">
-    <MSBuild Projects="Plugins\Display\Display.csproj;Plugins\Logitech\Logitech.csproj;Plugins\SystemTrayMenu\SystemTrayMenu.csproj;Plugins\Wallpaper\Wallpaper.csproj" Targets="GetTargetPath">
+    <MSBuild Projects="Plugins\Display\Display.csproj;Plugins\Logitech\Logitech.csproj;Plugins\SystemTrayMenu\SystemTrayMenu.csproj;Plugins\Wallpaper\Wallpaper.csproj;Plugins\Scheduler\Scheduler.csproj;Plugins\FileWatcher\FileWatcher.csproj;Plugins\ProcessWatcher\ProcessWatcher.csproj" Targets="GetTargetPath">
       <Output TaskParameter="TargetOutputs" ItemName="BuiltInPluginAssemblies" />
     </MSBuild>
     <Copy SourceFiles="@(BuiltInPluginAssemblies)"
@@ -49,6 +54,12 @@
           DestinationFolder="$(PublishDir)Plugins\SystemTrayMenu" />
     <Copy SourceFiles="$(OutDir)Plugins\Wallpaper\Wallpaper.dll;$(OutDir)Plugins\Wallpaper\Wallpaper.deps.json"
           DestinationFolder="$(PublishDir)Plugins\Wallpaper" />
+    <Copy SourceFiles="$(OutDir)Plugins\Scheduler\Scheduler.dll;$(OutDir)Plugins\Scheduler\Scheduler.deps.json"
+          DestinationFolder="$(PublishDir)Plugins\Scheduler" />
+    <Copy SourceFiles="$(OutDir)Plugins\FileWatcher\FileWatcher.dll;$(OutDir)Plugins\FileWatcher\FileWatcher.deps.json"
+          DestinationFolder="$(PublishDir)Plugins\FileWatcher" />
+    <Copy SourceFiles="$(OutDir)Plugins\ProcessWatcher\ProcessWatcher.dll;$(OutDir)Plugins\ProcessWatcher\ProcessWatcher.deps.json"
+          DestinationFolder="$(PublishDir)Plugins\ProcessWatcher" />
   </Target>
 
 </Project>

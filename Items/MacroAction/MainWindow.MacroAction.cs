@@ -896,8 +896,8 @@ public partial class MainWindow
                 [Console]::Out.WriteLine('{{eventMarker}}' + $encoded)
             }
             $eg | Add-Member -MemberType ScriptMethod -Name InvokeHost -Value {
-                param([string]$Operation, [string]$Name, [AllowNull()][object]$Value)
-                $json = ConvertTo-Json -InputObject @{ Operation = $Operation; Name = $Name; Value = $Value } -Compress -Depth 100 -ErrorAction Stop
+                param([string]$Operation, [string]$Name, [AllowNull()][object]$Value, [AllowNull()][object]$Key = $null)
+                $json = ConvertTo-Json -InputObject @{ Operation = $Operation; Name = $Name; Value = $Value; Key = $Key } -Compress -Depth 100 -ErrorAction Stop
                 $encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($json))
                 [Console]::Out.WriteLine('{{requestMarker}}' + $encoded)
                 $reply = [Console]::In.ReadLine()
@@ -928,8 +928,11 @@ public partial class MainWindow
                 return $this.InvokeHost('Remove', $Name, $null)
             }
             $eg | Add-Member -MemberType ScriptMethod -Name Notify -Value {
-                param([string]$Title, [string]$Message)
-                $null = $this.InvokeHost('Notify', $Title, $Message)
+                param([string]$Title, [string]$Message, [AllowNull()][object]$Key = $null)
+                if ($null -ne $Key -and $Key -isnot [string]) {
+                    throw "La clé de notification doit être une chaîne."
+                }
+                $null = $this.InvokeHost('Notify', $Title, $Message, $Key)
             }
             try {
             {{script}}

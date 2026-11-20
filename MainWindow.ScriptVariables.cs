@@ -21,11 +21,19 @@ public partial class MainWindow
             if (string.IsNullOrWhiteSpace(message))
                 throw new InvalidOperationException("Le texte de la notification est obligatoire.");
 
+            string? key = null;
+            if (request.TryGetProperty("Key", out var keyElement) && keyElement.ValueKind != JsonValueKind.Null)
+            {
+                if (keyElement.ValueKind != JsonValueKind.String ||
+                    string.IsNullOrWhiteSpace(key = keyElement.GetString()))
+                    throw new InvalidOperationException("La clé de notification doit être une chaîne non vide.");
+            }
+
             await Dispatcher.InvokeAsync(() =>
             {
                 if (System.Windows.Application.Current is not App app)
                     throw new InvalidOperationException("L'application de notification n'est pas disponible.");
-                app.ShowNotification(name, message);
+                app.ShowNotification(name, message, key);
             }, DispatcherPriority.Normal, context.CancellationToken);
             return null;
         }

@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Security.Principal;
+using System.Text;
 using System.Windows;
 using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
@@ -48,7 +50,7 @@ public partial class App : Application
         }
     }
 
-    internal void ShowNotification(string title, string message)
+    internal void ShowNotification(string title, string message, string? key = null)
     {
         if (_notificationManager is null)
             throw new InvalidOperationException(
@@ -67,6 +69,8 @@ public partial class App : Application
                 .AddText(message)
                 .MuteAudio()
                 .BuildNotification();
+            if (key is not null)
+                notification.Tag = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
             _notificationManager.Show(notification);
         }
         catch (Exception exception) when (exception is COMException or UnauthorizedAccessException or
