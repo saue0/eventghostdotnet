@@ -8,113 +8,65 @@
         Background="#F3F5F8" Foreground="#202938"
         FontFamily="Segoe UI">
     <Window.Resources>
-        <Style TargetType="TextBlock">
-            <Setter Property="VerticalAlignment" Value="Center"/>
-        </Style>
-        <Style x:Key="ItemIconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
-            <Setter Property="Width" Value="28"/>
-            <Setter Property="Height" Value="28"/>
-            <Setter Property="MinHeight" Value="0"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="Margin" Value="2"/>
-        </Style>
-        <Style x:Key="EditActionIconButton" TargetType="Button" BasedOn="{StaticResource ItemIconButton}">
-            <Setter Property="ToolTip" Value="Modifier l'action"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding Kind}" Value="{x:Static local:MacroActionKind.Beep}">
-                    <Setter Property="IsEnabled" Value="False"/>
-                    <Setter Property="ToolTip" Value="Cette action n'a pas de paramètres à modifier."/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-        <Style TargetType="TreeViewItem">
-            <Setter Property="IsExpanded" Value="True"/>
-            <Setter Property="Padding" Value="4,3"/>
-            <Setter Property="Margin" Value="1"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <EventSetter Event="MouseDoubleClick" Handler="TreeItem_MouseDoubleClick"/>
-            <EventSetter Event="Loaded" Handler="TreeItem_Loaded"/>
-            <EventSetter Event="Expanded" Handler="TreeItem_Expanded"/>
-            <EventSetter Event="Collapsed" Handler="TreeItem_Collapsed"/>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#F2F6FC"/>
-                </Trigger>
-                <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#DBEAFE"/>
-                    <Setter Property="Foreground" Value="#1D4ED8"/>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-        <HierarchicalDataTemplate DataType="{x:Type local:StartupSection}" ItemsSource="{Binding Children}">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0"/>
-                <Button Content="Ajouter un plugin" Click="AddPluginStartup_Click"
-                        ToolTip="Ajouter une configuration de démarrage de plugin"/>
-                <Button Content="Ajouter une action" Click="AddStartupAction_Click"
-                        ToolTip="Ajouter une action exécutée au démarrage"/>
-            </StackPanel>
-        </HierarchicalDataTemplate>
-        <DataTemplate DataType="{x:Type local:PluginStartupConfiguration}">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding DisplayName}" Margin="0,0,8,0"/>
-                <Button Style="{StaticResource ItemIconButton}" Content="&#xE70F;"
-                        Click="EditPluginStartupItem_Click" IsEnabled="{Binding CanConfigure}"
-                        ToolTip="Modifier le démarrage du plugin" AutomationProperties.Name="Modifier le démarrage du plugin"/>
-                <Button Style="{StaticResource ItemIconButton}" Content="&#xE74D;"
-                        Click="RemovePluginStartupItem_Click" Foreground="#B42318"
-                        ToolTip="Supprimer le démarrage du plugin" AutomationProperties.Name="Supprimer le démarrage du plugin"/>
-            </StackPanel>
-        </DataTemplate>
-        <HierarchicalDataTemplate DataType="{x:Type local:MacroGroup}" ItemsSource="{Binding Macros}">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0"/>
-                <Button Style="{StaticResource ItemIconButton}" Content="&#xE70F;"
-                        Click="RenameMacroGroupItem_Click" ToolTip="Renommer le groupe"
-                        AutomationProperties.Name="Renommer le groupe"/>
-                <Button Style="{StaticResource ItemIconButton}" Content="&#xE74D;"
-                        Click="RemoveMacroGroupItem_Click" Foreground="#B42318"
-                        ToolTip="Supprimer le groupe" AutomationProperties.Name="Supprimer le groupe"/>
-            </StackPanel>
-        </HierarchicalDataTemplate>
-        <HierarchicalDataTemplate DataType="{x:Type local:MacroDefinition}" ItemsSource="{Binding TreeChildren}">
-            <StackPanel Orientation="Horizontal">
-                <CheckBox IsChecked="{Binding IsEnabled}" VerticalAlignment="Center" Margin="0,0,8,0"
-                          ToolTip="Activer ou désactiver la macro" AutomationProperties.Name="Macro active"/>
-                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0"/>
-                <Button Style="{StaticResource ItemIconButton}" Content="&#xE70F;"
-                        Click="EditMacroItem_Click" ToolTip="Modifier la macro" AutomationProperties.Name="Modifier la macro"/>
-                <Button Style="{StaticResource ItemIconButton}" Content="&#xE74D;"
-                        Click="RemoveMacroItem_Click" Foreground="#B42318" ToolTip="Supprimer la macro" AutomationProperties.Name="Supprimer la macro"/>
-            </StackPanel>
-        </HierarchicalDataTemplate>
-        <DataTemplate DataType="{x:Type local:MacroEvent}">
-            <StackPanel Orientation="Horizontal">
-                <CheckBox IsChecked="{Binding IsEnabled}" VerticalAlignment="Center" Margin="0,0,8,0"
-                          ToolTip="Activer ou désactiver l'événement" AutomationProperties.Name="Événement actif"/>
-                <TextBlock Margin="5,0,8,0" Foreground="#466586" Text="{Binding Name, StringFormat=Événement : {0}}"/>
-                <Button Style="{StaticResource ItemIconButton}" Content="&#xE70F;"
-                        Click="EditEventItem_Click" ToolTip="Modifier l'événement" AutomationProperties.Name="Modifier l'événement"/>
-                <Button Style="{StaticResource ItemIconButton}" Content="&#xE74D;"
-                        Click="RemoveEventItem_Click" Foreground="#B42318" ToolTip="Supprimer l'événement" AutomationProperties.Name="Supprimer l'événement"/>
-            </StackPanel>
-        </DataTemplate>
-        <DataTemplate DataType="{x:Type local:MacroAction}">
-            <StackPanel Orientation="Horizontal">
-                <CheckBox IsChecked="{Binding IsEnabled}" VerticalAlignment="Center" Margin="0,0,8,0"
-                          ToolTip="Activer ou désactiver l'action" AutomationProperties.Name="Action active"/>
-                <TextBlock Text="{Binding DisplayName}" Margin="0,0,8,0"/>
-                <Button Style="{StaticResource EditActionIconButton}" Content="&#xE70F;"
-                        Click="EditActionItem_Click" ToolTipService.ShowOnDisabled="True" AutomationProperties.Name="Modifier l'action"/>
-                <Button Style="{StaticResource ItemIconButton}" Content="&#xE74D;"
-                        Click="RemoveActionItem_Click" Foreground="#B42318" ToolTip="Supprimer l'action" AutomationProperties.Name="Supprimer l'action"/>
-            </StackPanel>
-        </DataTemplate>
-        <DataTemplate x:Key="ActionChoiceGroupHeaderTemplate">
-            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="#466586"
-                       Margin="0,5,0,2"/>
-        </DataTemplate>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Items/StartupSection/StartupSectionTemplate.xaml"/>
+                <ResourceDictionary Source="Items/PluginStartup/PluginStartupTemplate.xaml"/>
+                <ResourceDictionary Source="Items/MacroGroup/MacroGroupTemplate.xaml"/>
+                <ResourceDictionary Source="Items/Macro/MacroTemplate.xaml"/>
+                <ResourceDictionary Source="Items/MacroEvent/MacroEventTemplate.xaml"/>
+                <ResourceDictionary Source="Items/MacroAction/MacroActionTemplate.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <Style TargetType="TextBlock">
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
+            <Style x:Key="ItemIconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+                <Setter Property="Width" Value="28"/>
+                <Setter Property="Height" Value="28"/>
+                <Setter Property="MinHeight" Value="0"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Margin" Value="2"/>
+            </Style>
+            <Style x:Key="EditActionIconButton" TargetType="Button" BasedOn="{StaticResource ItemIconButton}">
+                <Setter Property="ToolTip" Value="Modifier l'action"/>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static local:MacroActionKind.Beep}">
+                        <Setter Property="IsEnabled" Value="False"/>
+                        <Setter Property="ToolTip" Value="Cette action n'a pas de paramètres à modifier."/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+            <Style TargetType="TreeViewItem">
+                <Style.Resources>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#DBEAFE"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1D4ED8"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#DBEAFE"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1D4ED8"/>
+                </Style.Resources>
+                <Setter Property="IsExpanded" Value="True"/>
+                <Setter Property="Padding" Value="4,3"/>
+                <Setter Property="Margin" Value="1"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <EventSetter Event="MouseDoubleClick" Handler="TreeItem_MouseDoubleClick"/>
+                <EventSetter Event="Loaded" Handler="TreeItem_Loaded"/>
+                <EventSetter Event="Expanded" Handler="TreeItem_Expanded"/>
+                <EventSetter Event="Collapsed" Handler="TreeItem_Collapsed"/>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="#F2F6FC"/>
+                    </Trigger>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="#DBEAFE"/>
+                        <Setter Property="Foreground" Value="#1D4ED8"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+            <DataTemplate x:Key="ActionChoiceGroupHeaderTemplate">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="#466586"
+                           Margin="0,5,0,2"/>
+            </DataTemplate>
+        </ResourceDictionary>
     </Window.Resources>
 
     <DockPanel>
@@ -134,21 +86,6 @@
         <Border DockPanel.Dock="Top" Background="White" BorderBrush="#E0E5EC" BorderThickness="1" CornerRadius="10"
                 Margin="12,8,12,0" Padding="8">
             <WrapPanel>
-                <Button Content="Ajouter un groupe" Click="AddMacroGroup_Click"/>
-                <Button Content="Nouvelle macro" Click="AddMacro_Click"/>
-                <Button x:Name="EditMacroButton" Content="Modifier macro" IsEnabled="False" Click="EditMacro_Click"/>
-                <Button Content="Supprimer macro" Click="RemoveMacro_Click"/>
-                <Button Content="Ajouter action" Click="AddAction_Click"/>
-                <Button x:Name="EditActionButton" Content="Modifier action" IsEnabled="False" Click="EditAction_Click"/>
-                <Button Content="Supprimer action" Click="RemoveAction_Click"/>
-                <Button x:Name="MoveSelectionUpButton" Content="Monter" IsEnabled="False"
-                        Click="MoveSelectionUp_Click" ToolTip="Monter la macro ou l'action sélectionnée"/>
-                <Button x:Name="MoveSelectionDownButton" Content="Descendre" IsEnabled="False"
-                        Click="MoveSelectionDown_Click" ToolTip="Descendre la macro ou l'action sélectionnée"/>
-                <Button x:Name="MoveMacroToGroupButton" Content="Changer de groupe" IsEnabled="False"
-                        Click="MoveMacroToGroup_Click" ToolTip="Déplacer la macro sélectionnée dans un autre groupe"/>
-                <Button x:Name="RunSelectionButton" Content="Exécuter" Style="{StaticResource PrimaryButton}"
-                        IsEnabled="False" Click="RunMacro_Click"/>
                 <Button Content="Déclencher un événement" Click="SimulateEvent_Click"/>
                 <Button Content="Arrêter les plugins" Click="StopPlugins_Click"/>
                 <Button Content="Enregistrer" Click="SaveConfiguration_Click"/>
@@ -157,7 +94,7 @@
 
         <StatusBar DockPanel.Dock="Bottom" Background="White" BorderBrush="#E0E5EC" BorderThickness="0,1,0,0">
             <StatusBarItem>
-                <TextBlock Text="Moteur prêt — les événements peuvent déclencher les macros associées."/>
+                <TextBlock x:Name="StatusText" Text="Moteur prêt — les événements peuvent déclencher les macros associées."/>
             </StatusBarItem>
             <StatusBarItem HorizontalAlignment="Right">
                 <TextBlock x:Name="ConfigurationPathText" Foreground="#687386"/>
@@ -166,20 +103,58 @@
 
         <Grid Margin="12">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*"/>
-                <ColumnDefinition Width="5"/>
                 <ColumnDefinition Width="3*"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="2*"/>
             </Grid.ColumnDefinitions>
 
             <Border Grid.Column="0" Background="#172033" BorderBrush="#172033" BorderThickness="1" CornerRadius="10" Padding="12">
                 <DockPanel>
                     <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                         <TextBlock Text="Journal d'exécution" Foreground="White" FontSize="14" FontWeight="SemiBold" Margin="0,0,12,0"/>
+                        <Button Content="Copier la sélection" Command="ApplicationCommands.Copy"
+                                CommandTarget="{Binding ElementName=LogList}" ToolTip="Copier les lignes sélectionnées (Ctrl+C)"/>
+                        <Button Content="Effacer le journal" Click="ClearLog_Click"/>
                         <Button Content="Copier le nom de l'événement" Click="CopyEventName_Click"/>
                         <Button Content="Ajouter à la macro sélectionnée" Click="AssignEventName_Click"/>
                     </WrapPanel>
                     <ListBox x:Name="LogList" Background="#172033" Foreground="#DDE6F4" BorderThickness="0" FontFamily="Consolas" FontSize="12"
-                             ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+                             SelectionMode="Extended" ScrollViewer.HorizontalScrollBarVisibility="Auto" Loaded="LogList_Loaded"
+                             PreviewMouseLeftButtonDown="LogList_PreviewMouseLeftButtonDown"
+                             PreviewMouseLeftButtonUp="LogList_PreviewMouseLeftButtonUp"
+                             PreviewMouseMove="LogList_PreviewMouseMove" MouseLeave="LogList_MouseLeave">
+                        <ListBox.CommandBindings>
+                            <CommandBinding Command="ApplicationCommands.Copy" Executed="CopyLog_Executed" CanExecute="CopyLog_CanExecute"/>
+                        </ListBox.CommandBindings>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="7,5"/>
+                                <Setter Property="Margin" Value="1"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="#DDE6F4"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#2C3B54"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#315D86"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
                 </DockPanel>
             </Border>
 
@@ -189,7 +164,18 @@
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="Configuration" FontSize="16" FontWeight="SemiBold" Padding="14,12"/>
                     <TreeView x:Name="ConfigurationTree" BorderThickness="0" SelectedItemChanged="ConfigurationTree_SelectedItemChanged"
-                              ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              ContextMenuOpening="ConfigurationTree_ContextMenuOpening"
+                              AllowDrop="True" PreviewMouseLeftButtonDown="ConfigurationTree_PreviewMouseLeftButtonDown"
+                              PreviewMouseLeftButtonUp="ConfigurationTree_PreviewMouseLeftButtonUp"
+                              PreviewMouseMove="ConfigurationTree_PreviewMouseMove" MouseLeave="ConfigurationTree_MouseLeave"
+                              PreviewDragOver="ConfigurationTree_PreviewDragOver"
+                              PreviewDragLeave="ConfigurationTree_PreviewDragLeave"
+                              PreviewDrop="ConfigurationTree_PreviewDrop">
+                        <TreeView.ContextMenu>
+                            <ContextMenu/>
+                        </TreeView.ContextMenu>
+                    </TreeView>
                 </DockPanel>
             </Border>
         </Grid>

@@ -366,7 +366,7 @@ public sealed class WallpaperModule : IPlugin
                 image, directory, index, settings.IncludeSystemInfo, cancellationToken);
             var generatedPath = settings.IncludeSystemInfo
                 ? await Task.Run(
-                    () => CreateInfoImage(downloadedPath, directory, $"Image_{index + 1}.jpg"),
+                    () => CreateInfoImage(downloadedPath, directory, $"Image_{index + 1}.jpg", host.Log),
                     cancellationToken)
                 : downloadedPath;
             generatedImages.Add(generatedPath);
@@ -396,7 +396,7 @@ public sealed class WallpaperModule : IPlugin
                 throw new FileNotFoundException($"Image locale introuvable : {sourcePath}", sourcePath);
 
             var generatedPath = settings.IncludeSystemInfo
-                ? await CreateLocalInfoImageAsync(sourcePath, directory, index, cancellationToken)
+                ? await CreateLocalInfoImageAsync(sourcePath, directory, index, host.Log, cancellationToken)
                 : await Task.Run(
                     () => CopyLocalImageToTemp(sourcePath, directory, index),
                     cancellationToken);
@@ -413,7 +413,7 @@ public sealed class WallpaperModule : IPlugin
     }
 
     private static async Task<string> CreateLocalInfoImageAsync(
-        string sourcePath, string directory, int index, CancellationToken cancellationToken)
+        string sourcePath, string directory, int index, Action<string> log, CancellationToken cancellationToken)
     {
         var outputName = $"Image_{index + 1}.jpg";
         var outputPath = Path.Combine(directory, outputName);
@@ -426,7 +426,7 @@ public sealed class WallpaperModule : IPlugin
         }
 
         return await Task.Run(
-            () => CreateInfoImage(processingPath, directory, outputName), cancellationToken);
+            () => CreateInfoImage(processingPath, directory, outputName, log), cancellationToken);
     }
 
     public Task ResetAsync() => Task.CompletedTask;
@@ -580,37 +580,13 @@ public sealed class WallpaperModule : IPlugin
         }
     }
 
-    private static string CreateInfoImage(string imagePath, string outputDirectory, string outputFileName)
+    private static string CreateInfoImage(
+        string imagePath, string outputDirectory, string outputFileName, Action<string> log)
     {
         using var source = Image.FromFile(imagePath);
         using var bitmap = new Bitmap(source);
         using var graphics = Graphics.FromImage(bitmap);
-        using var titleFont = new Font("Arial", 28, FontStyle.Bold);
-        using var normalFont = new Font("Arial", 16, FontStyle.Bold);
-        using var blackBrush = new SolidBrush(Color.Black);
-        using var yellowBrush = new SolidBrush(Color.Yellow);
-        graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-
-        var rows = CreateInfoRows();
-        var maxLabelWidth = 0f;
-        var maxValueWidth = 0f;
-        for (var index = 0; index < rows.Count; index++)
-        {
-            var font = index == 0 ? titleFont : normalFont;
-            maxLabelWidth = Math.Max(maxLabelWidth, graphics.MeasureString(rows[index].Label, font).Width);
-            maxValueWidth = Math.Max(maxValueWidth, graphics.MeasureString(rows[index].Value, font).Width);
-        }
-
-        var valueOffset = (int)Math.Ceiling(maxLabelWidth) + 40;
-        var blockWidth = valueOffset + maxValueWidth;
-        var startX = Math.Max(20, bitmap.Width - blockWidth - 65);
-        for (var index = 0; index < rows.Count; index++)
-        {
-            var font = index == 0 ? titleFont : normalFont;
-            var y = index == 0 ? 20 : 55 + ((index - 1) * 24);
-            DrawShadowText(graphics, rows[index].Label, font, yellowBrush, blackBrush, startX, y);
-            DrawShadowText(graphics, rows[index].Value, font, yellowBrush, blackBrush, startX + valueOffset, y);
-        }
+        DrawInfoRows(graphics, bitmap.Size, CreateInfoRows(log));
 
         var outputPath = Path.Combine(outputDirectory, outputFileName);
         var jpegCodec = ImageCodecInfo.GetImageEncoders()
@@ -623,28 +599,111 @@ public sealed class WallpaperModule : IPlugin
         return outputPath;
     }
 
-    private static List<InfoRow> CreateInfoRows()
+    private static void DrawInfoRows(Graphics graphics, Size imageSize, IReadOnlyList<InfoRow> rows)
+    {
+        using var titleFont = new Font("Arial", 28, FontStyle.Bold);
+        using var normalFont = new Font("Arial", 16, FontStyle.Bold);
+        using var blackBrush = new SolidBrush(Color.Black);
+        using var yellowBrush = new SolidBrush(Color.Yellow);
+        graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+        var maxLabelWidth = 0f;
+        var maxValueWidth = 0f;
+        var blockHeight = 0f;
+        for (var index = 0; index < rows.Count; index++)
+        {
+            var font = index == 0 ? titleFont : normalFont;
+            var labelSize = graphics.MeasureString(rows[index].Label, font);
+            var valueSize = graphics.MeasureString(rows[index].Value, font);
+            maxLabelWidth = Math.Max(maxLabelWidth, labelSize.Width);
+            maxValueWidth = Math.Max(maxValueWidth, valueSize.Width);
+            var y = index == 0 ? 0 : 35 + ((index - 1) * 24);
+            blockHeight = Math.Max(blockHeight, y + Math.Max(labelSize.Height, valueSize.Height) + 2);
+        }
+
+        var valueOffset = (int)Math.Ceiling(maxLabelWidth) + 40;
+        var blockWidth = valueOffset + maxValueWidth + 2;
+        var marginX = Math.Min(20f, imageSize.Width / 4f);
+        var marginY = Math.Min(20f, imageSize.Height / 4f);
+        var scale = Math.Min(1f, Math.Min(
+            (imageSize.Width - 2 * marginX) / blockWidth,
+            (imageSize.Height - 2 * marginY) / blockHeight));
+        var startX = Math.Max(marginX, imageSize.Width - blockWidth * scale - 65);
+        graphics.TranslateTransform(startX, marginY);
+        graphics.ScaleTransform(scale, scale);
+        for (var index = 0; index < rows.Count; index++)
+        {
+            var font = index == 0 ? titleFont : normalFont;
+            var y = index == 0 ? 0 : 35 + ((index - 1) * 24);
+            DrawShadowText(graphics, rows[index].Label, font, yellowBrush, blackBrush, 0, y);
+            DrawShadowText(graphics, rows[index].Value, font, yellowBrush, blackBrush, valueOffset, y);
+        }
+    }
+
+    private static List<InfoRow> CreateInfoRows(Action<string> log)
     {
         var computerName = Dns.GetHostName();
-        var operatingSystem = Registry.GetValue(
+        var productName = Registry.GetValue(
             @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion",
             "ProductName",
             null) as string ?? Environment.OSVersion.VersionString;
+        var operatingSystem = GetOperatingSystemName(productName, Environment.OSVersion.Version);
         var bootTime = DateTime.Now.Subtract(TimeSpan.FromMilliseconds(Environment.TickCount64));
         var systemDrive = Path.GetPathRoot(Environment.SystemDirectory) ?? @"C:\";
-        var drive = new DriveInfo(systemDrive);
-        var freeSpace = (drive.AvailableFreeSpace / 1024d / 1024d / 1024d)
-            .ToString("F2", CultureInfo.InvariantCulture);
-
-        return
-        [
+        var rows = new List<InfoRow>
+        {
             new InfoRow("Nom de l'ordinateur:", computerName),
             new InfoRow("Système d'exploitation:", operatingSystem),
-            new InfoRow("Heure de démarrage:", bootTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)),
-            new InfoRow("Espace libre:", $"{systemDrive} {freeSpace} GB NTFS"),
-            new InfoRow("Domaine de la machine:", Environment.UserDomainName),
-            new InfoRow("Utilisateur connecté:", Environment.UserName)
-        ];
+            new InfoRow("Heure de démarrage:", bootTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture))
+        };
+        var drives = DriveInfo.GetDrives()
+            .Where(drive => drive.DriveType == DriveType.Fixed)
+            .OrderBy(drive => string.Equals(drive.Name, systemDrive, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(drive => drive.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (drives.Length == 0)
+        {
+            log("Aucun disque fixe disponible pour les informations du fond d'écran.");
+            rows.Add(new InfoRow("Espace libre:", "Aucun disque fixe disponible"));
+        }
+        var firstDrive = true;
+        foreach (var drive in drives)
+        {
+            var label = firstDrive ? "Espace libre:" : string.Empty;
+            firstDrive = false;
+            try
+            {
+                if (!drive.IsReady)
+                {
+                    log($"Disque {drive.Name} indisponible pour les informations du fond d'écran.");
+                    rows.Add(new InfoRow(label, $"{drive.Name} indisponible"));
+                    continue;
+                }
+
+                var freeSpace = (drive.AvailableFreeSpace / 1024d / 1024d / 1024d)
+                    .ToString("F2", CultureInfo.InvariantCulture);
+                rows.Add(new InfoRow(label, $"{drive.Name} {freeSpace} GB {drive.DriveFormat}"));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                log($"Impossible de lire le disque {drive.Name} : {exception.Message}");
+                rows.Add(new InfoRow(label, $"{drive.Name} indisponible"));
+            }
+        }
+        rows.Add(new InfoRow("Domaine de la machine:", Environment.UserDomainName));
+        rows.Add(new InfoRow("Utilisateur connecté:", Environment.UserName));
+        return rows;
+    }
+
+    private static string GetOperatingSystemName(string productName, Version version)
+    {
+        const string windows10 = "Windows 10";
+        if (version.Major == 10 && version.Minor == 0 && version.Build >= 22000 &&
+            (string.Equals(productName, windows10, StringComparison.OrdinalIgnoreCase) ||
+             productName.StartsWith(windows10 + " ", StringComparison.OrdinalIgnoreCase)))
+            return "Windows 11" + productName[windows10.Length..];
+
+        return productName;
     }
 
     private static void DrawShadowText(

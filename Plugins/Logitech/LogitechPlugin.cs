@@ -243,7 +243,7 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
         if (TryGetFeature(_batteryFeatures, deviceId, out var batteryFeature) && feature == batteryFeature)
         {
             var state = BatteryStates.TryGetValue(report[6], out var status) ? status : "unknown";
-            RaiseEvent("Battery", $"{value}% {state}");
+            RaiseEvent("Battery", $"{value}% {state} DeviceId={deviceId:X2}");
         }
     }
 
@@ -255,7 +255,8 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
         await WritePacketAsync([0x11, deviceId, 0x00, 0x0C, 0x10, 0x00], cancellationToken);
     }
 
-    private void RaiseEvent(string name, string? payload) => _eventCallback($"{_eventPrefix}.{name}", payload);
+    private void RaiseEvent(string name, string? payload) =>
+        _eventCallback($"{_eventPrefix}.{name}", payload);
 
     private static bool TryGetFeature(Dictionary<byte, byte> features, byte deviceId, out byte feature)
     {

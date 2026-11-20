@@ -2,7 +2,11 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -13,15 +17,17 @@
   <ItemGroup>
     <Resource Include="Assets\EventGhostDotNet.ico" />
     <Content Include="Assets\EventGhostDotNet.ico" CopyToOutputDirectory="PreserveNewest" />
+    <None Remove="Plugins\**\bin\**;Plugins\**\obj\**;PluginContracts\**\bin\**;PluginContracts\**\obj\**" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.7.0" />
     <Compile Remove="Plugins\**\*.cs;PluginContracts\**\*.cs" />
-    <ProjectReference Include="PluginContracts\PluginContracts.csproj" />
-    <ProjectReference Include="Plugins\Display\Display.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="Plugins\Logitech\Logitech.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="Plugins\SystemTrayMenu\SystemTrayMenu.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="Plugins\Wallpaper\Wallpaper.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="PluginContracts\PluginContracts.csproj" GlobalPropertiesToRemove="PublishDir" />
+    <ProjectReference Include="Plugins\Display\Display.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
+    <ProjectReference Include="Plugins\Logitech\Logitech.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
+    <ProjectReference Include="Plugins\SystemTrayMenu\SystemTrayMenu.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
+    <ProjectReference Include="Plugins\Wallpaper\Wallpaper.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
   </ItemGroup>
 
   <Target Name="CopyBuiltInPlugins" AfterTargets="Build">

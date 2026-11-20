@@ -1,0 +1,1194 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Input;
+using EventGhostDotNet.PluginContracts;
+using Brushes = System.Windows.Media.Brushes;
+using Button = System.Windows.Controls.Button;
+using ComboBox = System.Windows.Controls.ComboBox;
+using FontFamily = System.Windows.Media.FontFamily;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using MessageBox = System.Windows.MessageBox;
+using Orientation = System.Windows.Controls.Orientation;
+using TextBox = System.Windows.Controls.TextBox;
+
+namespace EventGhostDotNet;
+
+public partial class MainWindow
+{
+    private async void AddAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedMacro is not MacroDefinition macro)
+        {
+            MessageBox.Show(this, "Créez ou sélectionnez d'abord une macro.", "Aucune macro sélectionnée",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var choice = PromptForActionKind();
+        if (choice is null)
+            return;
+
+        var action = choice.Kind == MacroActionKind.Plugin
+            ? ConfigurePluginAction(choice.PluginId!, choice.ActionId!, null, choice.InstanceId)
+            : PromptForAction(choice.Kind, sourceMacro: macro);
+        if (action is null)
+            return;
+
+        macro.Actions.Add(action);
+        var startupCount = PluginStartups.Count;
+        if (action.Kind == MacroActionKind.Plugin)
+            EnsurePluginStartupConfiguration(action.PluginId);
+        RefreshPluginDescriptions(Macros);
+        RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
+        SelectTreeItem(macro, action);
+        WriteLog($"Action ajoutée à « {macro.Name} » : {action.DisplayName}.");
+        if (PluginStartups.Count != startupCount && IsLoaded)
+            await RestartConfiguredPluginsAsync();
+    }
+
+    private async void EditAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (ConfigurationTree.SelectedItem is not MacroAction action)
+            return;
+
+        var macro = Macros.FirstOrDefault(item => item.Actions.Contains(action)) ??
+                    (StartupActions.Contains(action) ? _startupMacro : null);
+        if (macro is null)
+            return;
+
+        var updatedAction = action.Kind == MacroActionKind.Plugin
+            ? ConfigurePluginAction(action.PluginId, action.ActionId, action)
+            : PromptForAction(action.Kind, action, macro);
+        if (updatedAction is null)
+            return;
+
+        var actionIndex = macro.Actions.IndexOf(action);
+        if (actionIndex < 0)
+            return;
+
+        if (action.Kind == MacroActionKind.Plugin)
+        {
+            var plugin = _pluginLoader.Find(action.PluginId);
+            if (plugin is null)
+            {
+                MessageBox.Show(this, $"Plugin introuvable : {action.PluginId}", "Plugin indisponible",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            try
+            {
+                await plugin.ActionChangedAsync(ResolvePluginAction(plugin, action),
+                    ResolvePluginAction(plugin, updatedAction));
+            }
+            catch (Exception exception)
+            {
+                WriteLog($"Erreur de modification du plugin {action.PluginId} : {exception.Message}");
+                MessageBox.Show(this, exception.Message, "Erreur de plugin", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+        }
+
+        updatedAction.Id = action.Id;
+        updatedAction.IsEnabled = action.IsEnabled;
+        var startupCount = PluginStartups.Count;
+        if (updatedAction.Kind == MacroActionKind.Plugin)
+            EnsurePluginStartupConfiguration(updatedAction.PluginId);
+        macro.Actions[actionIndex] = updatedAction;
+        RefreshPluginDescriptions(Macros);
+        RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
+        if (ReferenceEquals(macro, _startupMacro))
+            SelectStartupActionItem(updatedAction);
+        else
+            SelectTreeItem(macro, updatedAction);
+        WriteLog($"Action modifiée dans « {macro.Name} » : {updatedAction.DisplayName}.");
+        if (PluginStartups.Count != startupCount && IsLoaded)
+            await RestartConfiguredPluginsAsync();
+    }
+
+    private MacroAction? PromptForAction(
+        MacroActionKind kind, MacroAction? existing = null, MacroDefinition? sourceMacro = null)
+    {
+        if (kind == MacroActionKind.RaiseEvent)
+            return PromptForRaiseEventAction(existing);
+        if (kind is MacroActionKind.Jump or MacroActionKind.If)
+            return PromptForFlowAction(kind, existing, sourceMacro);
+        if (IsTargetedSystemAction(kind))
+            return PromptForSystemAction(kind, existing);
+
+        var isEditing = existing is not null;
+        var value = kind switch
+        {
+            MacroActionKind.Log => PromptForText(isEditing ? "Modifier l'action de journal" : "Action de journal",
+                "Texte à ajouter au journal :", existing?.Value ?? string.Empty),
+            MacroActionKind.Delay => PromptForText(isEditing ? "Modifier l'action d'attente" : "Action d'attente",
+                "Durée en millisecondes (0 à 600000) :", existing?.Value ?? "1000"),
+            MacroActionKind.ShowMessage => PromptForText(isEditing ? "Modifier l'action de message" : "Action de message",
+                "Message à afficher :", existing?.Value ?? string.Empty),
+            MacroActionKind.OpenUrl => PromptForText(isEditing ? "Modifier l'action d'ouverture d'URL" : "Action d'ouverture d'URL",
+                "URL HTTP ou HTTPS :", existing?.Value ?? "https://"),
+            MacroActionKind.PowerShell => PromptForScript(existing?.Value),
+            MacroActionKind.Beep => existing?.Value ?? string.Empty,
+            _ => null
+        };
+
+        if (value is null)
+            return null;
+
+        if (kind == MacroActionKind.Delay &&
+            (!int.TryParse(value, out var milliseconds) || milliseconds is < 0 or > 600000))
+        {
+            MessageBox.Show(this, "La durée doit être un nombre entier compris entre 0 et 600000.", "Durée invalide",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return null;
+        }
+
+        if (kind == MacroActionKind.OpenUrl &&
+            (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")))
+        {
+            MessageBox.Show(this, "Saisissez une URL absolue commençant par http:// ou https://.", "URL invalide",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return null;
+        }
+
+        return new MacroAction
+        {
+            Kind = kind,
+            Value = value,
+            Target = existing?.Target ?? string.Empty
+        };
+    }
+
+    private MacroAction? PromptForRaiseEventAction(MacroAction? existing)
+    {
+        var dialog = new Window
+        {
+            Title = existing is null ? "Déclencher un événement" : "Modifier l'événement déclenché",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+            Padding = new Thickness(16)
+        };
+        var panel = new StackPanel { Width = 440 };
+        panel.Children.Add(new TextBlock { Text = "Nom de l'événement :", Margin = new Thickness(0, 0, 0, 5) });
+        var eventName = new TextBox
+        {
+            Text = existing?.Target ?? string.Empty,
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        panel.Children.Add(eventName);
+        panel.Children.Add(new TextBlock { Text = "Payload (facultatif) :", Margin = new Thickness(0, 0, 0, 5) });
+        var payload = new TextBox
+        {
+            Text = existing?.Value ?? string.Empty,
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        panel.Children.Add(payload);
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
+        var save = new Button { Content = "Enregistrer", IsDefault = true };
+        save.Click += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(eventName.Text))
+            {
+                MessageBox.Show(dialog, "Saisissez un nom d'événement.", "Nom requis",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        buttons.Children.Add(save);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+        if (dialog.ShowDialog() != true)
+            return null;
+
+        return new MacroAction
+        {
+            Kind = MacroActionKind.RaiseEvent,
+            Target = eventName.Text.Trim(),
+            Value = payload.Text
+        };
+    }
+
+    private MacroAction? PromptForSystemAction(MacroActionKind kind, MacroAction? existing)
+    {
+        var requiresAction = kind is MacroActionKind.EnableAction or MacroActionKind.DisableAction;
+        var dialog = new Window
+        {
+            Title = SystemActionName(kind),
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+            Padding = new Thickness(16)
+        };
+        var panel = new StackPanel { Width = 560 };
+        panel.Children.Add(new TextBlock { Text = "Macro cible :", Margin = new Thickness(0, 0, 0, 5) });
+        var macroChoices = Macros.Select((macro, index) => new SystemMacroChoice(macro, $"{index + 1}. {macro.Name}")).ToArray();
+        var macroSelector = new ComboBox
+        {
+            ItemsSource = macroChoices,
+            DisplayMemberPath = nameof(SystemMacroChoice.Label),
+            Margin = new Thickness(0, 0, 0, 12),
+            SelectedItem = existing is null ? macroChoices.FirstOrDefault() :
+                macroChoices.FirstOrDefault(choice => Guid.TryParse(existing.Target, out var id) && choice.Macro.Id == id)
+        };
+        panel.Children.Add(macroSelector);
+
+        ComboBox? actionSelector = null;
+        if (requiresAction)
+        {
+            panel.Children.Add(new TextBlock { Text = "Action cible :", Margin = new Thickness(0, 0, 0, 5) });
+            actionSelector = new ComboBox { DisplayMemberPath = nameof(SystemActionChoice.Label), Margin = new Thickness(0, 0, 0, 12) };
+            panel.Children.Add(actionSelector);
+            void UpdateActionChoices()
+            {
+                var targetMacro = (macroSelector.SelectedItem as SystemMacroChoice)?.Macro;
+                var actionChoices = targetMacro?.Actions.Select((action, index) =>
+                    new SystemActionChoice(action, $"{index + 1}. {ActionTargetName(action)}")).ToArray() ?? [];
+                actionSelector.ItemsSource = actionChoices;
+                actionSelector.SelectedItem = existing is null ? actionChoices.FirstOrDefault() :
+                    actionChoices.FirstOrDefault(choice => Guid.TryParse(existing.Value, out var id) && choice.Action.Id == id);
+            }
+            macroSelector.SelectionChanged += (_, _) => UpdateActionChoices();
+            UpdateActionChoices();
+        }
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
+        var save = new Button { Content = "Enregistrer", IsDefault = true };
+        save.Click += (_, _) =>
+        {
+            if (macroSelector.SelectedItem is not SystemMacroChoice ||
+                (requiresAction && actionSelector?.SelectedItem is not SystemActionChoice))
+            {
+                MessageBox.Show(dialog, "Sélectionnez une macro et, si nécessaire, une action cible.",
+                    "Cible requise", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        buttons.Children.Add(save);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+        if (dialog.ShowDialog() != true || macroSelector.SelectedItem is not SystemMacroChoice selected)
+            return null;
+
+        return new MacroAction
+        {
+            Kind = kind,
+            Target = selected.Macro.Id.ToString(),
+            Value = (actionSelector?.SelectedItem as SystemActionChoice)?.Action.Id.ToString() ?? string.Empty
+        };
+    }
+
+    private MacroAction? PromptForFlowAction(
+        MacroActionKind kind, MacroAction? existing, MacroDefinition? sourceMacro)
+    {
+        var dialog = new Window
+        {
+            Title = SystemActionName(kind),
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+            Padding = new Thickness(16)
+        };
+        var panel = new StackPanel { Width = 480 };
+        ComboBox? modeSelector = null;
+        ComboBox? macroSelector = null;
+        ComboBox? actionSelector = null;
+        ComboBox? comparisonSelector = null;
+        TextBox? comparisonValue = null;
+        var targetLabel = new TextBlock { Margin = new Thickness(0, 0, 0, 5) };
+
+        if (kind == MacroActionKind.Jump)
+        {
+            panel.Children.Add(new TextBlock { Text = "Type de Jump :", Margin = new Thickness(0, 0, 0, 5) });
+            var modeChoices = new[]
+            {
+                new JumpModeChoice(JumpMode.CallAndStop, "Lancer une macro puis arrêter celle-ci"),
+                new JumpModeChoice(JumpMode.CallAndResume, "Lancer une macro puis reprendre celle-ci"),
+                new JumpModeChoice(JumpMode.GotoAction, "Sauter à une action de cette macro")
+            };
+            modeSelector = new ComboBox
+            {
+                ItemsSource = modeChoices,
+                DisplayMemberPath = nameof(JumpModeChoice.Label),
+                SelectedItem = modeChoices.First(choice => choice.Mode == (existing?.JumpMode ?? JumpMode.CallAndStop)),
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            panel.Children.Add(modeSelector);
+
+            var macroChoices = Macros.Select((macro, index) =>
+                new SystemMacroChoice(macro, $"{index + 1}. {macro.Name}")).ToArray();
+            macroSelector = new ComboBox
+            {
+                ItemsSource = macroChoices,
+                DisplayMemberPath = nameof(SystemMacroChoice.Label),
+                SelectedItem = existing is null ? macroChoices.FirstOrDefault() : macroChoices.FirstOrDefault(choice =>
+                    Guid.TryParse(existing.Target, out var id) && choice.Macro.Id == id),
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            var actionChoices = sourceMacro?.Actions.Select((action, index) =>
+                new SystemActionChoice(action, $"{index + 1}. {ActionTargetName(action)}")).ToArray() ?? [];
+            actionSelector = new ComboBox
+            {
+                ItemsSource = actionChoices,
+                DisplayMemberPath = nameof(SystemActionChoice.Label),
+                SelectedItem = existing is null ? actionChoices.FirstOrDefault() : actionChoices.FirstOrDefault(choice =>
+                    Guid.TryParse(existing.Value, out var id) && choice.Action.Id == id),
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            panel.Children.Add(targetLabel);
+            panel.Children.Add(macroSelector);
+            panel.Children.Add(actionSelector);
+
+            void UpdateJumpTargets()
+            {
+                var gotoAction = (modeSelector.SelectedItem as JumpModeChoice)?.Mode == JumpMode.GotoAction;
+                targetLabel.Text = gotoAction ? "Action cible dans la macro actuelle :" : "Macro cible :";
+                macroSelector.Visibility = gotoAction ? Visibility.Collapsed : Visibility.Visible;
+                actionSelector.Visibility = gotoAction ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            modeSelector.SelectionChanged += (_, _) => UpdateJumpTargets();
+            UpdateJumpTargets();
+        }
+        else
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Tester la valeur configurée de l’action précédente :",
+                Margin = new Thickness(0, 0, 0, 5)
+            });
+            var comparisonChoices = new[]
+            {
+                new IfComparisonChoice(IfComparison.Equals, "Est égale à"),
+                new IfComparisonChoice(IfComparison.Contains, "Contient"),
+                new IfComparisonChoice(IfComparison.NotEquals, "Est différente de")
+            };
+            comparisonSelector = new ComboBox
+            {
+                ItemsSource = comparisonChoices,
+                DisplayMemberPath = nameof(IfComparisonChoice.Label),
+                SelectedItem = comparisonChoices.First(choice =>
+                    choice.Comparison == (existing?.IfComparison ?? IfComparison.Equals)),
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            comparisonValue = new TextBox
+            {
+                Text = existing?.Value ?? string.Empty,
+                Padding = new Thickness(6),
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+            panel.Children.Add(comparisonSelector);
+            panel.Children.Add(comparisonValue);
+        }
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
+        var save = new Button { Content = "Enregistrer", IsDefault = true };
+        save.Click += (_, _) =>
+        {
+            var validJumpTarget = kind != MacroActionKind.Jump ||
+                ((modeSelector?.SelectedItem as JumpModeChoice)?.Mode == JumpMode.GotoAction
+                    ? actionSelector?.SelectedItem is SystemActionChoice
+                    : macroSelector?.SelectedItem is SystemMacroChoice);
+            if (!validJumpTarget)
+            {
+                MessageBox.Show(dialog, "Sélectionnez une cible valide pour l'action Jump.",
+                    "Cible requise", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        buttons.Children.Add(save);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+
+        if (dialog.ShowDialog() != true)
+            return null;
+
+        if (kind == MacroActionKind.If)
+        {
+            var comparison = (comparisonSelector?.SelectedItem as IfComparisonChoice)?.Comparison
+                ?? throw new InvalidOperationException("La comparaison de l'action If n'est pas sélectionnée.");
+            return new MacroAction
+            {
+                Kind = kind,
+                IfComparison = comparison,
+                Value = comparisonValue?.Text ?? string.Empty
+            };
+        }
+
+        var selectedMode = (modeSelector?.SelectedItem as JumpModeChoice)?.Mode
+            ?? throw new InvalidOperationException("Le mode de l'action Jump n'est pas sélectionné.");
+        var selectedMacro = macroSelector?.SelectedItem as SystemMacroChoice;
+        var selectedAction = actionSelector?.SelectedItem as SystemActionChoice;
+        return new MacroAction
+        {
+            Kind = kind,
+            JumpMode = selectedMode,
+            Target = selectedMode == JumpMode.GotoAction ? string.Empty : selectedMacro!.Macro.Id.ToString(),
+            Value = selectedMode == JumpMode.GotoAction ? selectedAction!.Action.Id.ToString() : string.Empty
+        };
+    }
+
+    private static bool IsSystemAction(MacroActionKind kind) =>
+        kind is MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or
+            MacroActionKind.EnableAction or MacroActionKind.DisableAction or
+            MacroActionKind.Jump or MacroActionKind.If;
+
+    private static bool IsTargetedSystemAction(MacroActionKind kind) =>
+        kind is MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or
+            MacroActionKind.EnableAction or MacroActionKind.DisableAction;
+
+    private static string SystemActionName(MacroActionKind kind) => kind switch
+    {
+        MacroActionKind.EnableMacro => "Système — activer une macro",
+        MacroActionKind.DisableMacro => "Système — désactiver une macro",
+        MacroActionKind.EnableAction => "Système — activer une action",
+        MacroActionKind.DisableAction => "Système — désactiver une action",
+        MacroActionKind.Jump => "Système — Jump",
+        MacroActionKind.If => "Système — If",
+        _ => throw new InvalidOperationException($"Action système inconnue : {kind}")
+    };
+
+    private static string ActionTargetName(MacroAction action) =>
+        IsSystemAction(action.Kind) ? SystemActionName(action.Kind) : action.DisplayName;
+
+    private static MacroDefinition FindSystemTargetMacro(IEnumerable<MacroDefinition> macros, MacroAction action)
+    {
+        if (!Guid.TryParse(action.Target, out var id) || id == Guid.Empty)
+            throw new InvalidOperationException("Identifiant de macro cible invalide.");
+        var matches = macros.Where(macro => macro.Id == id).Take(2).ToArray();
+        return matches.Length == 1 ? matches[0] :
+            throw new InvalidOperationException("La macro cible est introuvable ou son identifiant est dupliqué.");
+    }
+
+    private static MacroAction FindSystemTargetAction(MacroDefinition macro, MacroAction action)
+    {
+        if (!Guid.TryParse(action.Value, out var id) || id == Guid.Empty)
+            throw new InvalidOperationException("Identifiant d'action cible invalide.");
+        var matches = macro.Actions.Where(item => item.Id == id).Take(2).ToArray();
+        return matches.Length == 1 ? matches[0] :
+            throw new InvalidOperationException($"L'action cible de « {macro.Name} » est introuvable ou son identifiant est dupliqué.");
+    }
+
+    private static MacroAction FindJumpTargetAction(MacroDefinition macro, MacroAction action)
+    {
+        if (!Guid.TryParse(action.Value, out var id) || id == Guid.Empty)
+            throw new InvalidOperationException("Identifiant d'action Jump invalide.");
+        var matches = macro.Actions.Where(item => item.Id == id).Take(2).ToArray();
+        return matches.Length == 1 ? matches[0] :
+            throw new InvalidOperationException($"L'action cible de Jump dans « {macro.Name} » est introuvable ou son identifiant est dupliqué.");
+    }
+
+    private static SystemActionResult ExecuteSystemAction(IEnumerable<MacroDefinition> macros, MacroAction action)
+    {
+        var macro = FindSystemTargetMacro(macros, action);
+        switch (action.Kind)
+        {
+            case MacroActionKind.EnableMacro:
+            case MacroActionKind.DisableMacro:
+                var previousMacroState = macro.IsEnabled;
+                macro.IsEnabled = action.Kind == MacroActionKind.EnableMacro;
+                return new SystemActionResult(
+                    $"Macro « {macro.Name} » {(macro.IsEnabled ? "activée" : "désactivée")}.",
+                    macro.Id, null, previousMacroState, macro.IsEnabled);
+            case MacroActionKind.EnableAction:
+            case MacroActionKind.DisableAction:
+                var target = FindSystemTargetAction(macro, action);
+                var previousActionState = target.IsEnabled;
+                target.IsEnabled = action.Kind == MacroActionKind.EnableAction;
+                return new SystemActionResult(
+                    $"Action « {ActionTargetName(target)} » de « {macro.Name} » {(target.IsEnabled ? "activée" : "désactivée")}.",
+                    macro.Id, target.Id, previousActionState, target.IsEnabled);
+            default:
+                throw new InvalidOperationException($"Action système inconnue : {action.Kind}");
+        }
+    }
+
+    private static string AcceptRuntimeStateChange(string cleanConfiguration, SystemActionResult result)
+    {
+        if (result.PreviousState == result.CurrentState)
+            return cleanConfiguration;
+
+        var configuration = JsonSerializer.Deserialize<ConfigurationDocument>(cleanConfiguration, JsonOptions)
+            ?? throw new JsonException("La référence de configuration est invalide.");
+        var macro = configuration.Macros.SingleOrDefault(item => item.Id == result.MacroId);
+        if (macro is null)
+            return cleanConfiguration;
+
+        // Preserve a manually changed state in the dirty comparison.
+        if (result.ActionId is Guid actionId)
+        {
+            var action = macro.Actions.SingleOrDefault(item => item.Id == actionId);
+            if (action is null || action.IsEnabled != result.PreviousState)
+                return cleanConfiguration;
+            action.IsEnabled = result.CurrentState;
+        }
+        else
+        {
+            if (macro.IsEnabled != result.PreviousState)
+                return cleanConfiguration;
+            macro.IsEnabled = result.CurrentState;
+        }
+        return JsonSerializer.Serialize(configuration, JsonOptions);
+    }
+
+    private static void RefreshSystemActionDescriptions(IEnumerable<MacroDefinition> macros)
+    {
+        foreach (var (ownerMacro, action) in macros.SelectMany(macro =>
+                     macro.Actions.Select(action => (Owner: macro, Action: action))))
+        {
+            if (!IsSystemAction(action.Kind))
+                continue;
+            try
+            {
+                if (action.Kind == MacroActionKind.If)
+                {
+                    var comparison = action.IfComparison switch
+                    {
+                        IfComparison.Equals => "est égale à",
+                        IfComparison.Contains => "contient",
+                        IfComparison.NotEquals => "est différente de",
+                        _ => "a une comparaison invalide"
+                    };
+                    action.SystemDisplayName = $"{SystemActionName(action.Kind)} — valeur précédente {comparison} « {action.Value} »";
+                    continue;
+                }
+
+                if (action.Kind == MacroActionKind.Jump)
+                {
+                    if (action.JumpMode == JumpMode.GotoAction)
+                    {
+                        var targetAction = FindJumpTargetAction(ownerMacro, action);
+                        action.SystemDisplayName =
+                            $"{SystemActionName(action.Kind)} — action {ownerMacro.Actions.IndexOf(targetAction) + 1} de « {ownerMacro.Name} »";
+                    }
+                    else
+                    {
+                        var targetMacro = FindSystemTargetMacro(macros, action);
+                        var behavior = action.JumpMode switch
+                        {
+                            JumpMode.CallAndStop => "appeler et arrêter",
+                            JumpMode.CallAndResume => "appeler puis reprendre",
+                            _ => "mode invalide"
+                        };
+                        action.SystemDisplayName = $"{SystemActionName(action.Kind)} — {behavior} « {targetMacro.Name} »";
+                    }
+                    continue;
+                }
+
+                var macro = FindSystemTargetMacro(macros, action);
+                var target = string.Empty;
+                if (action.Kind is MacroActionKind.EnableAction or MacroActionKind.DisableAction)
+                {
+                    var targetAction = FindSystemTargetAction(macro, action);
+                    target = $" — {macro.Actions.IndexOf(targetAction) + 1}. {ActionTargetName(targetAction)}";
+                }
+                action.SystemDisplayName = $"{SystemActionName(action.Kind)} : {macro.Name}{target}";
+            }
+            catch (InvalidOperationException)
+            {
+                action.SystemDisplayName = $"{SystemActionName(action.Kind)} : cible introuvable";
+            }
+        }
+    }
+
+    private void RemoveAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (ConfigurationTree.SelectedItem is not MacroAction action)
+            return;
+
+        var macro = Macros.FirstOrDefault(item => item.Actions.Contains(action)) ??
+                    (StartupActions.Contains(action) ? _startupMacro : null);
+        if (macro is null)
+            return;
+
+        if (MessageBox.Show(this, $"Supprimer l'action « {action.DisplayName} » de « {macro.Name} » ?",
+                "Confirmation", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
+            return;
+
+        macro.Actions.Remove(action);
+        RefreshPluginDescriptions(Macros);
+        RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
+        if (ReferenceEquals(macro, _startupMacro))
+            SelectStartupSection();
+        else
+            SelectTreeItem(macro);
+        WriteLog($"Action supprimée de « {macro.Name} ».");
+    }
+
+    private MacroAction? ConfigurePluginAction(
+        string pluginId, string actionId, MacroAction? existing, string? instanceId = null)
+    {
+        var plugin = _pluginLoader.Find(pluginId);
+        if (plugin is null)
+        {
+            MessageBox.Show(this, $"Plugin introuvable : {pluginId}", "Plugin indisponible",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            return null;
+        }
+
+        try
+        {
+            var host = new PluginHost(this, new ActionContext(this, _sessionCancellation.Token, null));
+            var provider = plugin as IPluginInstanceProvider;
+            instanceId = existing?.InstanceId ?? instanceId;
+            PluginActionData? data;
+            if (provider is not null && provider.RequiresInstance(actionId))
+            {
+                if (string.IsNullOrEmpty(instanceId))
+                    throw new InvalidOperationException("Ajoutez d'abord une configuration de démarrage pour ce plugin.");
+                var configuration = FindInstanceConfiguration(plugin, provider, instanceId);
+                data = provider.ConfigureInstanceAction(actionId,
+                    existing is null ? null : ToPluginData(existing), ToPluginData(configuration), host);
+            }
+            else
+            {
+                data = plugin.ConfigureAction(actionId, existing is null ? null : ToPluginData(existing), host);
+            }
+            if (data is null)
+                return null;
+            if (!string.Equals(data.ActionId, actionId, StringComparison.Ordinal))
+                throw new InvalidOperationException("Le plugin a retourné un type d'action inattendu.");
+            return new MacroAction
+            {
+                Kind = MacroActionKind.Plugin,
+                PluginId = plugin.Id,
+                ActionId = data.ActionId,
+                Value = data.Value,
+                Target = data.Target,
+                InstanceId = instanceId,
+                PluginDisplayName = plugin.DescribeAction(data)
+            };
+        }
+        catch (Exception exception)
+        {
+            WriteLog($"Erreur de configuration du plugin {pluginId} : {exception.Message}");
+            MessageBox.Show(this, exception.Message, "Erreur de plugin", MessageBoxButton.OK, MessageBoxImage.Error);
+            return null;
+        }
+    }
+
+    private PluginActionData ResolvePluginAction(IPlugin plugin, MacroAction action)
+    {
+        var data = ToPluginData(action);
+        if (plugin is IPluginInstanceProvider provider && provider.RequiresInstance(action.ActionId) &&
+            !string.IsNullOrEmpty(action.InstanceId))
+        {
+            var configuration = FindInstanceConfiguration(plugin, provider, action.InstanceId);
+            return provider.BindInstance(data, ToPluginData(configuration));
+        }
+        return data;
+    }
+
+    private void EnsurePluginActionEnabled(IPlugin plugin, MacroAction action)
+    {
+        if (plugin is IPluginInstanceProvider provider && provider.RequiresInstance(action.ActionId) &&
+            !string.IsNullOrEmpty(action.InstanceId))
+        {
+            if (!FindInstanceConfiguration(plugin, provider, action.InstanceId).IsEnabled)
+                throw new InvalidOperationException($"Le démarrage associé au plugin {plugin.Name} est désactivé.");
+            return;
+        }
+
+        var configurations = PluginStartups.Where(configuration =>
+            string.Equals(configuration.PluginId, plugin.Id, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (configurations.Length > 0 && configurations.All(configuration => !configuration.IsEnabled))
+            throw new InvalidOperationException($"Le plugin {plugin.Name} est désactivé.");
+    }
+
+    private void RefreshPluginDescriptions(IEnumerable<MacroDefinition> macros)
+    {
+        foreach (var action in macros.SelectMany(macro => macro.Actions).Concat(StartupActions)
+                     .Where(action => action.Kind == MacroActionKind.Plugin))
+        {
+            var plugin = _pluginLoader.Find(action.PluginId);
+            if (plugin is null)
+                continue;
+            try
+            {
+                action.PluginDisplayName = plugin.DescribeAction(ResolvePluginAction(plugin, action));
+                if (plugin is IPluginInstanceProvider provider && provider.RequiresInstance(action.ActionId) &&
+                    !string.IsNullOrEmpty(action.InstanceId))
+                {
+                    var configuration = FindInstanceConfiguration(plugin, provider, action.InstanceId);
+                    action.PluginDisplayName += $" ({provider.GetInstanceName(ToPluginData(configuration))})";
+                }
+            }
+            catch (Exception exception)
+            {
+                action.PluginDisplayName = $"{action.PluginId} — {action.ActionId} : configuration indisponible";
+                WriteLog($"Impossible d'afficher l'action {action.PluginId}/{action.ActionId} : {exception.Message}");
+            }
+        }
+    }
+
+    internal void EditActionItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: MacroAction action })
+        {
+            var macro = Macros.FirstOrDefault(item => item.Actions.Contains(action));
+            if (macro is not null)
+                SelectTreeItem(macro, action);
+            else if (StartupActions.Contains(action))
+                SelectStartupActionItem(action);
+            EditAction_Click(sender, e);
+        }
+    }
+
+    internal void RemoveActionItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: MacroAction action })
+        {
+            var macro = Macros.FirstOrDefault(item => item.Actions.Contains(action));
+            if (macro is not null)
+                SelectTreeItem(macro, action);
+            else if (StartupActions.Contains(action))
+                SelectStartupActionItem(action);
+            RemoveAction_Click(sender, e);
+        }
+    }
+
+    private static bool EvaluateIf(string? previousResult, MacroAction action)
+    {
+        if (previousResult is null)
+            return false;
+        return action.IfComparison switch
+        {
+            IfComparison.Equals => string.Equals(previousResult, action.Value, StringComparison.OrdinalIgnoreCase),
+            IfComparison.Contains => previousResult.Contains(action.Value, StringComparison.OrdinalIgnoreCase),
+            IfComparison.NotEquals => !string.Equals(previousResult, action.Value, StringComparison.OrdinalIgnoreCase),
+            _ => throw new InvalidOperationException("La comparaison de l'action If est invalide.")
+        };
+    }
+
+    private static string? FormatActionResult(object? result) => result switch
+    {
+        null => null,
+        string value => value,
+        JsonElement { ValueKind: JsonValueKind.String } element => element.GetString(),
+        JsonElement element => element.GetRawText(),
+        IFormattable value => value.ToString(null, CultureInfo.InvariantCulture),
+        _ => result.ToString()
+    };
+
+    private string? PromptForScript(string? initialScript = null)
+    {
+        var editor = new TextBox
+        {
+            AcceptsReturn = true,
+            AcceptsTab = true,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            TextWrapping = TextWrapping.NoWrap,
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 13,
+            MinWidth = 640,
+            MinHeight = 300,
+            Text = initialScript ?? "# Exemple : écrire dans le journal\nWrite-Output 'Bonjour depuis PowerShell'"
+        };
+        editor.PreviewKeyDown += (_, args) =>
+        {
+            if (args.Key == Key.Tab)
+            {
+                editor.SelectedText = "    ";
+                args.Handled = true;
+            }
+        };
+
+        var dialog = new Window
+        {
+            Title = "Script PowerShell",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Width = 760,
+            Height = 470,
+            MinWidth = 680,
+            MinHeight = 400
+        };
+        var panel = new DockPanel { Margin = new Thickness(16) };
+        var warning = new TextBlock
+        {
+            Text = "Le script s'exécute avec les droits de l'application. N'utilisez que du code de confiance.",
+            Foreground = Brushes.DarkRed,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        DockPanel.SetDock(warning, Dock.Top);
+        panel.Children.Add(warning);
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 12, 0, 0)
+        };
+        DockPanel.SetDock(buttons, Dock.Bottom);
+        var cancel = new Button { Content = "Annuler", IsCancel = true };
+        var add = new Button
+        {
+            Content = initialScript is null ? "Ajouter le script" : "Enregistrer le script",
+            IsDefault = true
+        };
+        add.Click += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(editor.Text))
+            {
+                MessageBox.Show(dialog, "Le script ne peut pas être vide.", "Script vide",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(add);
+        panel.Children.Add(buttons);
+        panel.Children.Add(editor);
+        dialog.Content = panel;
+
+        return dialog.ShowDialog() == true ? editor.Text : null;
+    }
+
+    private static async Task RunPowerShellAsync(
+        string script, ActionContext context, CancellationToken cancellationToken)
+    {
+        var executable = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            "WindowsPowerShell",
+            "v1.0",
+            "powershell.exe");
+        var markerPrefix = $"__EGDN_{Guid.NewGuid():N}_";
+        var logMarker = $"{markerPrefix}LOG:";
+        var eventMarker = $"{markerPrefix}EVENT:";
+        var resultMarker = $"{markerPrefix}RESULT:";
+        var requestMarker = $"{markerPrefix}REQUEST:";
+        var triggerEvent = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(context.Event)));
+        var initialResult = context.Result is string initialValue
+            ? $"[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(initialValue))}'))"
+            : "$null";
+        var wrappedScript = $$"""
+            $__egEventJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{{triggerEvent}}'))
+            $eg = [pscustomobject]@{ Result = {{initialResult}}; Event = (ConvertFrom-Json -InputObject $__egEventJson) }
+            $eg | Add-Member -MemberType ScriptMethod -Name Log -Value {
+                param([object]$Message)
+                $payload = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([string]$Message))
+                [Console]::Out.WriteLine('{{logMarker}}' + $payload)
+            }
+            $eg | Add-Member -MemberType ScriptMethod -Name SetResult -Value {
+                param([object]$Value)
+                $this.Result = $Value
+            }
+            $eg | Add-Member -MemberType ScriptMethod -Name RaiseEvent -Value {
+                param([string]$Name, [AllowNull()][string]$Payload)
+                $json = ConvertTo-Json -InputObject @{ Name = $Name; Payload = $Payload } -Compress
+                $encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($json))
+                [Console]::Out.WriteLine('{{eventMarker}}' + $encoded)
+            }
+            $eg | Add-Member -MemberType ScriptMethod -Name InvokeHost -Value {
+                param([string]$Operation, [string]$Name, [AllowNull()][object]$Value)
+                $json = ConvertTo-Json -InputObject @{ Operation = $Operation; Name = $Name; Value = $Value } -Compress -Depth 100 -ErrorAction Stop
+                $encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($json))
+                [Console]::Out.WriteLine('{{requestMarker}}' + $encoded)
+                $reply = [Console]::In.ReadLine()
+                if ($null -eq $reply) { throw "La connexion au contexte EventGhost est fermée." }
+                $responseJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($reply))
+                $response = ConvertFrom-Json -InputObject $responseJson -ErrorAction Stop
+                if (-not $response.Ok) { throw $response.Error }
+                return ,$response.Value
+            }
+            $eg | Add-Member -MemberType ScriptMethod -Name GetVariable -Value {
+                param([string]$Name)
+                return ,($this.InvokeHost('Get', $Name, $null))
+            }
+            $eg | Add-Member -MemberType ScriptMethod -Name HasVariable -Value {
+                param([string]$Name)
+                return $this.InvokeHost('Has', $Name, $null)
+            }
+            $eg | Add-Member -MemberType ScriptMethod -Name SetVariable -Value {
+                param([string]$Name, [AllowNull()][object]$Value)
+                $null = $this.InvokeHost('Set', $Name, $Value)
+            }
+            $eg | Add-Member -MemberType ScriptMethod -Name ExchangeVariable -Value {
+                param([string]$Name, [AllowNull()][object]$Value)
+                return ,($this.InvokeHost('Exchange', $Name, $Value))
+            }
+            $eg | Add-Member -MemberType ScriptMethod -Name RemoveVariable -Value {
+                param([string]$Name)
+                return $this.InvokeHost('Remove', $Name, $null)
+            }
+            $eg | Add-Member -MemberType ScriptMethod -Name Notify -Value {
+                param([string]$Title, [string]$Message)
+                $null = $this.InvokeHost('Notify', $Title, $Message)
+            }
+            try {
+            {{script}}
+            } finally {
+                if ($null -eq $eg.Result) {
+                    $__egResultJson = 'null'
+                } else {
+                    $__egResultJson = ConvertTo-Json -InputObject $eg.Result -Compress -Depth 100
+                }
+                $__egResultPayload = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([string]$__egResultJson))
+                [Console]::Out.WriteLine('{{resultMarker}}' + $__egResultPayload)
+            }
+            """;
+        var scriptPath = Path.Combine(Path.GetTempPath(), $"EventGhostDotNet-{Guid.NewGuid():N}.ps1");
+        try
+        {
+            File.WriteAllText(scriptPath, wrappedScript, new System.Text.UTF8Encoding(true));
+            var startInfo = new ProcessStartInfo(executable)
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("-NoLogo");
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-Command");
+            var escapedScriptPath = scriptPath.Replace("'", "''", StringComparison.Ordinal);
+            startInfo.ArgumentList.Add(
+                "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); " +
+                $"& '{escapedScriptPath}'; " +
+                "if (-not $?) { if ($null -eq $LASTEXITCODE) { exit 1 }; exit $LASTEXITCODE }");
+
+            using var process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("Impossible de démarrer PowerShell.");
+            var outputTask = ReadPowerShellOutputAsync(
+                process.StandardOutput, process.StandardInput, context, logMarker, eventMarker, resultMarker, requestMarker);
+            var errorTask = process.StandardError.ReadToEndAsync();
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                timeout.Token,
+                cancellationToken);
+            try
+            {
+                var exitTask = process.WaitForExitAsync(linkedCancellation.Token);
+                if (await Task.WhenAny(exitTask, outputTask) == outputTask && outputTask.IsFaulted)
+                {
+                    if (!process.HasExited)
+                        process.Kill(entireProcessTree: true);
+                    await process.WaitForExitAsync();
+                    await outputTask;
+                }
+                await exitTask;
+            }
+            catch (OperationCanceledException)
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync();
+                try
+                {
+                    await outputTask;
+                }
+                catch (Exception exception) when (exception is IOException or ObjectDisposedException or OperationCanceledException)
+                {
+                    context.Log($"Communication PowerShell interrompue : {exception.Message}");
+                }
+                _ = await errorTask;
+                if (cancellationToken.IsCancellationRequested)
+                    throw;
+                throw new TimeoutException("Le script PowerShell a dépassé la limite de 30 secondes.");
+            }
+
+            await outputTask;
+            var errors = await errorTask;
+            if (!string.IsNullOrWhiteSpace(errors))
+                foreach (var line in errors.Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries))
+                    context.Log($"PowerShell stderr : {line}");
+            if (process.ExitCode != 0)
+                throw new InvalidOperationException($"PowerShell s'est terminé avec le code {process.ExitCode}.");
+        }
+        finally
+        {
+            File.Delete(scriptPath);
+        }
+    }
+
+    private static async Task ReadPowerShellOutputAsync(
+        StreamReader output, StreamWriter input, ActionContext context,
+        string logMarker, string eventMarker, string resultMarker, string requestMarker)
+    {
+        while (await output.ReadLineAsync() is { } line)
+        {
+            if (line.StartsWith(logMarker, StringComparison.Ordinal))
+            {
+                context.Log(DecodePowerShellPayload(line[logMarker.Length..]));
+            }
+            else if (line.StartsWith(eventMarker, StringComparison.Ordinal))
+            {
+                using var eventJson = JsonDocument.Parse(DecodePowerShellPayload(line[eventMarker.Length..]));
+                var name = eventJson.RootElement.GetProperty("Name").GetString();
+                var payload = eventJson.RootElement.GetProperty("Payload");
+                if (string.IsNullOrWhiteSpace(name))
+                    throw new JsonException("Le script a tenté d'émettre un événement sans nom.");
+                context.RaiseEvent(name, payload.ValueKind == JsonValueKind.Null ? null : payload.GetString());
+            }
+            else if (line.StartsWith(resultMarker, StringComparison.Ordinal))
+            {
+                using var resultJson = JsonDocument.Parse(DecodePowerShellPayload(line[resultMarker.Length..]));
+                context.Result = resultJson.RootElement.ValueKind == JsonValueKind.Null
+                    ? null
+                    : resultJson.RootElement.Clone();
+            }
+            else if (line.StartsWith(requestMarker, StringComparison.Ordinal))
+            {
+                object response;
+                try
+                {
+                    using var request = JsonDocument.Parse(DecodePowerShellPayload(line[requestMarker.Length..]));
+                    var value = await context.Window.ExecuteScriptRequestAsync(context, request.RootElement);
+                    response = new { Ok = true, Value = value, Error = (string?)null };
+                }
+                catch (Exception exception) when (exception is JsonException or InvalidOperationException or
+                                                   ArgumentException or KeyNotFoundException)
+                {
+                    response = new { Ok = false, Value = (object?)null, Error = exception.Message };
+                }
+                var json = JsonSerializer.Serialize(response);
+                var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
+                await input.WriteLineAsync(encoded);
+                await input.FlushAsync();
+            }
+            else if (!string.IsNullOrWhiteSpace(line))
+            {
+                context.Log($"PowerShell : {line}");
+            }
+        }
+    }
+
+    private static string DecodePowerShellPayload(string payload)
+    {
+        try
+        {
+            return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(payload));
+        }
+        catch (FormatException exception)
+        {
+            throw new InvalidOperationException("Le protocole de communication du script PowerShell est invalide.", exception);
+        }
+    }
+
+    private ActionChoice? PromptForActionKind()
+    {
+        var dialog = new Window
+        {
+            Title = "Ajouter une action",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            Padding = new Thickness(18)
+        };
+        var panel = new StackPanel { Width = 300 };
+        panel.Children.Add(new TextBlock { Text = "Type d'action :", Margin = new Thickness(0, 0, 0, 8) });
+        var choices = new List<ActionChoice>
+        {
+            new(MacroActionKind.Log, "Journaliser"),
+            new(MacroActionKind.Delay, "Attendre"),
+            new(MacroActionKind.Beep, "Signal sonore"),
+            new(MacroActionKind.ShowMessage, "Afficher un message"),
+            new(MacroActionKind.OpenUrl, "Ouvrir une URL"),
+            new(MacroActionKind.PowerShell, "Script PowerShell"),
+            new(MacroActionKind.EnableMacro, "Activer une macro"),
+            new(MacroActionKind.DisableMacro, "Désactiver une macro"),
+            new(MacroActionKind.EnableAction, "Activer une action"),
+            new(MacroActionKind.DisableAction, "Désactiver une action"),
+            new(MacroActionKind.Jump, "Jump"),
+            new(MacroActionKind.If, "If"),
+            new(MacroActionKind.RaiseEvent, "Déclencher un événement")
+        };
+        choices.AddRange(CreatePluginActionChoices(_pluginLoader.Plugins, PluginStartups));
+        choices = choices
+            .OrderBy(choice => choice.Source switch
+            {
+                "Système" => 0,
+                "Logitech" => 1,
+                "Display" => 2,
+                _ => 3
+            })
+            .ThenBy(choice => choice.Source, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var actionChoicesView = CollectionViewSource.GetDefaultView(choices);
+        actionChoicesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(ActionChoice.Source)));
+        var selector = new ComboBox
+        {
+            ItemsSource = actionChoicesView,
+            SelectedIndex = 0,
+            Padding = new Thickness(6)
+        };
+        selector.DisplayMemberPath = nameof(ActionChoice.Name);
+        selector.GroupStyle.Add(new GroupStyle
+        {
+            HeaderTemplate = (DataTemplate)FindResource("ActionChoiceGroupHeaderTemplate")
+        });
+        panel.Children.Add(selector);
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 14, 0, 0)
+        };
+        var cancel = new Button { Content = "Annuler", IsCancel = true };
+        var add = new Button { Content = "Ajouter", IsDefault = true };
+        add.Click += (_, _) => dialog.DialogResult = true;
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(add);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+
+        return dialog.ShowDialog() == true && selector.SelectedItem is ActionChoice choice
+            ? choice
+            : null;
+    }
+
+    private static IEnumerable<ActionChoice> CreatePluginActionChoices(
+        IEnumerable<IPlugin> plugins, IEnumerable<PluginStartupConfiguration> startupConfigurations)
+    {
+        var choices = new List<ActionChoice>();
+        foreach (var plugin in plugins)
+        {
+            var provider = plugin as IPluginInstanceProvider;
+            foreach (var action in plugin.Actions)
+            {
+                if (provider is null || !provider.RequiresInstance(action.Id))
+                {
+                    choices.Add(new ActionChoice(MacroActionKind.Plugin, action.Name, plugin.Id, action.Id));
+                    continue;
+                }
+
+                var configurations = startupConfigurations
+                    .Where(config => string.Equals(config.PluginId, plugin.Id, StringComparison.OrdinalIgnoreCase) &&
+                        provider.IsInstanceConfiguration(config.ConfigurationId) &&
+                        !string.IsNullOrEmpty(config.InstanceId))
+                    .ToArray();
+                foreach (var configuration in configurations)
+                {
+                    var name = provider.GetInstanceName(ToPluginData(configuration));
+                    if (configurations.Count(other => provider.GetInstanceName(ToPluginData(other)) == name) > 1)
+                        name += $" — {configuration.Target} [{configuration.InstanceId}]";
+                    choices.Add(new ActionChoice(MacroActionKind.Plugin, $"{action.Name} ({name})",
+                        plugin.Id, action.Id, configuration.InstanceId));
+                }
+            }
+        }
+        return choices;
+    }
+}

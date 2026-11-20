@@ -1,0 +1,20 @@
+<ResourceDictionary x:Class="EventGhostDotNet.Items.PluginStartup.PluginStartupTemplate"
+                    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:EventGhostDotNet">
+    <DataTemplate DataType="{x:Type local:PluginStartupConfiguration}">
+        <StackPanel Orientation="Horizontal">
+            <CheckBox IsChecked="{Binding IsEnabled, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"
+                      Margin="0,0,8,0" Click="PluginStartupEnabled_Click"
+                      ToolTip="Activer ou désactiver le démarrage du plugin"
+                      AutomationProperties.Name="Démarrage du plugin actif"/>
+            <TextBlock Text="{Binding DisplayName}" Margin="0,0,8,0"/>
+            <Button Style="{DynamicResource ItemIconButton}" Content="&#xE70F;"
+                    Click="EditPluginStartupItem_Click" IsEnabled="{Binding CanConfigure}"
+                    ToolTip="Modifier le démarrage du plugin" AutomationProperties.Name="Modifier le démarrage du plugin"/>
+            <Button Style="{DynamicResource ItemIconButton}" Content="&#xE74D;"
+                    Click="RemovePluginStartupItem_Click" Foreground="#B42318"
+                    ToolTip="Supprimer le démarrage du plugin" AutomationProperties.Name="Supprimer le démarrage du plugin"/>
+        </StackPanel>
+    </DataTemplate>
+</ResourceDictionary>
