@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using EventGhostDotNet.PluginContracts;
 
 namespace EventGhostDotNet;
 
@@ -26,6 +27,12 @@ public sealed class MacroAction : ConfigurationItem
     public string Target { get; set; } = string.Empty;
     public string PluginId { get; set; } = string.Empty;
     public string ActionId { get; set; } = string.Empty;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool UnlimitedExecution { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool UseWindowsPowerShell { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LogLevel? LogLevel { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? InstanceId { get; set; }
 

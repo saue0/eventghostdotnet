@@ -179,7 +179,7 @@ public partial class MainWindow
         }
         catch (Exception exception)
         {
-            WriteLog($"Erreur de configuration du démarrage {plugin.Id} : {exception.Message}");
+            WriteLog($"Erreur de configuration du démarrage {plugin.Id} : {exception.Message}", LogLevel.Error);
             MessageBox.Show(this, exception.Message, "Erreur de plugin", MessageBoxButton.OK, MessageBoxImage.Error);
             return null;
         }

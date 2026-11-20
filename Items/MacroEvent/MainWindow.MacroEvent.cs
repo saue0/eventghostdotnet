@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using EventGhostDotNet.PluginContracts;
 using Clipboard = System.Windows.Clipboard;
 using MessageBox = System.Windows.MessageBox;
 
@@ -168,7 +169,7 @@ public partial class MainWindow
         }
         catch (ExternalException exception)
         {
-            WriteLog($"Impossible de copier le nom de l'événement : {exception.Message}");
+            WriteLog($"Impossible de copier le nom de l'événement : {exception.Message}", LogLevel.Error);
             MessageBox.Show(this, exception.Message, "Erreur de presse-papiers", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }

@@ -123,6 +123,11 @@
                              PreviewMouseLeftButtonDown="LogList_PreviewMouseLeftButtonDown"
                              PreviewMouseLeftButtonUp="LogList_PreviewMouseLeftButtonUp"
                              PreviewMouseMove="LogList_PreviewMouseMove" MouseLeave="LogList_MouseLeave">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <ContentPresenter Content="{Binding Display}" AutomationProperties.Name="{Binding Text}"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
                         <ListBox.CommandBindings>
                             <CommandBinding Command="ApplicationCommands.Copy" Executed="CopyLog_Executed" CanExecute="CopyLog_CanExecute"/>
                         </ListBox.CommandBindings>

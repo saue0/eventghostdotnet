@@ -48,10 +48,9 @@ if (Test-Path -LiteralPath $publishDir) {
     Remove-Item -LiteralPath $publishDir -Recurse -Force
 }
 
-& dotnet publish -c Release -o $publishDir `
-    -p:PublishSingleFile=true `
+& dotnet publish -c Release -r win-x64 --self-contained false -o $publishDir `
+    -p:PublishSingleFile=false `
     -p:EnableMsixTooling=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
     -p:DebugSymbols=false
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish a échoué (code $LASTEXITCODE)."
@@ -62,7 +61,7 @@ if (-not (Test-Path $exe)) {
     throw "Exécutable publié introuvable : $exe"
 }
 
-foreach ($plugin in @('Display', 'Logitech', 'SystemTrayMenu', 'Wallpaper')) {
+foreach ($plugin in @('Display', 'FileWatcher', 'Logitech', 'ProcessWatcher', 'Scheduler', 'SystemTrayMenu', 'Wallpaper')) {
     foreach ($extension in @('.dll', '.deps.json')) {
         $pluginFile = Join-Path $publishDir "Plugins\$plugin\$plugin$extension"
         if (-not (Test-Path -LiteralPath $pluginFile)) {

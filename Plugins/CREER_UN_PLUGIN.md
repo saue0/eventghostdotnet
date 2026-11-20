@@ -81,7 +81,7 @@ Chaque plugin doit avoir un `Id` stable, non vide et unique. Les identifiants d'
 
 Les actions reçoivent un `IPluginHost` et un jeton d'annulation :
 
-- `host.Log(message)` ajoute un message au journal de l'application.
+- `host.Log(message)` ajoute un message de niveau Information au journal. `host.Log(message, LogLevel.Warning)` permet de préciser le niveau (`Debug`, `Information`, `Warning` ou `Error`).
 - `host.Result` transmet une valeur à l'action suivante de la macro.
 - `host.RaiseEvent(name, payload)` émet un événement que les macros peuvent écouter.
 - `host.Owner` fournit la fenêtre WPF propriétaire d'un formulaire de configuration.

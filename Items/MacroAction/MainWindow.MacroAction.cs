@@ -9,6 +9,7 @@ using System.Windows.Input;
 using EventGhostDotNet.PluginContracts;
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
+using CheckBox = System.Windows.Controls.CheckBox;
 using ComboBox = System.Windows.Controls.ComboBox;
 using FontFamily = System.Windows.Media.FontFamily;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
@@ -87,7 +88,7 @@ public partial class MainWindow
             }
             catch (Exception exception)
             {
-                WriteLog($"Erreur de modification du plugin {action.PluginId} : {exception.Message}");
+                WriteLog($"Erreur de modification du plugin {action.PluginId} : {exception.Message}", LogLevel.Error);
                 MessageBox.Show(this, exception.Message, "Erreur de plugin", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
@@ -115,6 +116,10 @@ public partial class MainWindow
     {
         if (kind == MacroActionKind.RaiseEvent)
             return PromptForRaiseEventAction(existing);
+        if (kind == MacroActionKind.Log)
+            return PromptForLogAction(existing);
+        if (kind == MacroActionKind.PowerShell)
+            return PromptForScript(existing);
         if (kind is MacroActionKind.Jump or MacroActionKind.If)
             return PromptForFlowAction(kind, existing, sourceMacro);
         if (IsTargetedSystemAction(kind))
@@ -123,15 +128,12 @@ public partial class MainWindow
         var isEditing = existing is not null;
         var value = kind switch
         {
-            MacroActionKind.Log => PromptForText(isEditing ? "Modifier l'action de journal" : "Action de journal",
-                "Texte à ajouter au journal :", existing?.Value ?? string.Empty),
             MacroActionKind.Delay => PromptForText(isEditing ? "Modifier l'action d'attente" : "Action d'attente",
                 "Durée en millisecondes (0 à 600000) :", existing?.Value ?? "1000"),
             MacroActionKind.ShowMessage => PromptForText(isEditing ? "Modifier l'action de message" : "Action de message",
                 "Message à afficher :", existing?.Value ?? string.Empty),
             MacroActionKind.OpenUrl => PromptForText(isEditing ? "Modifier l'action d'ouverture d'URL" : "Action d'ouverture d'URL",
                 "URL HTTP ou HTTPS :", existing?.Value ?? "https://"),
-            MacroActionKind.PowerShell => PromptForScript(existing?.Value),
             MacroActionKind.Beep => existing?.Value ?? string.Empty,
             _ => null
         };
@@ -160,6 +162,72 @@ public partial class MainWindow
             Kind = kind,
             Value = value,
             Target = existing?.Target ?? string.Empty
+        };
+    }
+
+    private sealed record LogLevelChoice(LogLevel Level, string Label);
+
+    private MacroAction? PromptForLogAction(MacroAction? existing)
+    {
+        var dialog = new Window
+        {
+            Title = existing is null ? "Action de journal" : "Modifier l'action de journal",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+            Padding = new Thickness(16)
+        };
+        var panel = new StackPanel { Width = 440 };
+        panel.Children.Add(new TextBlock { Text = "Texte à ajouter au journal :", Margin = new Thickness(0, 0, 0, 5) });
+        var message = new TextBox
+        {
+            Text = existing?.Value ?? string.Empty,
+            Padding = new Thickness(6),
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        panel.Children.Add(message);
+        panel.Children.Add(new TextBlock { Text = "Niveau :", Margin = new Thickness(0, 0, 0, 5) });
+        var levels = new[]
+        {
+            new LogLevelChoice(LogLevel.Debug, "Debug"),
+            new LogLevelChoice(LogLevel.Information, "Information"),
+            new LogLevelChoice(LogLevel.Warning, "Avertissement"),
+            new LogLevelChoice(LogLevel.Error, "Erreur")
+        };
+        var selector = new ComboBox
+        {
+            ItemsSource = levels,
+            DisplayMemberPath = nameof(LogLevelChoice.Label),
+            SelectedItem = levels.FirstOrDefault(choice => choice.Level == (existing?.LogLevel ?? LogLevel.Information)),
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        panel.Children.Add(selector);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
+        var save = new Button { Content = "Enregistrer", IsDefault = true };
+        save.Click += (_, _) =>
+        {
+            if (string.IsNullOrEmpty(message.Text) || selector.SelectedItem is not LogLevelChoice)
+            {
+                MessageBox.Show(dialog, "Saisissez un message et sélectionnez un niveau.",
+                    "Journal incomplet", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        buttons.Children.Add(save);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+
+        if (dialog.ShowDialog() != true || selector.SelectedItem is not LogLevelChoice selected)
+            return null;
+        return new MacroAction
+        {
+            Kind = MacroActionKind.Log,
+            Value = message.Text,
+            Target = existing?.Target ?? string.Empty,
+            LogLevel = selected.Level == LogLevel.Information ? null : selected.Level
         };
     }
 
@@ -675,7 +743,7 @@ public partial class MainWindow
         }
         catch (Exception exception)
         {
-            WriteLog($"Erreur de configuration du plugin {pluginId} : {exception.Message}");
+            WriteLog($"Erreur de configuration du plugin {pluginId} : {exception.Message}", LogLevel.Error);
             MessageBox.Show(this, exception.Message, "Erreur de plugin", MessageBoxButton.OK, MessageBoxImage.Error);
             return null;
         }
@@ -730,7 +798,7 @@ public partial class MainWindow
             catch (Exception exception)
             {
                 action.PluginDisplayName = $"{action.PluginId} — {action.ActionId} : configuration indisponible";
-                WriteLog($"Impossible d'afficher l'action {action.PluginId}/{action.ActionId} : {exception.Message}");
+                WriteLog($"Impossible d'afficher l'action {action.PluginId}/{action.ActionId} : {exception.Message}", LogLevel.Error);
             }
         }
     }
@@ -784,7 +852,7 @@ public partial class MainWindow
         _ => result.ToString()
     };
 
-    private string? PromptForScript(string? initialScript = null)
+    private MacroAction? PromptForScript(MacroAction? existing)
     {
         var editor = new TextBox
         {
@@ -797,7 +865,7 @@ public partial class MainWindow
             FontSize = 13,
             MinWidth = 640,
             MinHeight = 300,
-            Text = initialScript ?? "# Exemple : écrire dans le journal\nWrite-Output 'Bonjour depuis PowerShell'"
+            Text = existing?.Value ?? "# Exemple : écrire dans le journal\nWrite-Output 'Bonjour depuis PowerShell'"
         };
         editor.PreviewKeyDown += (_, args) =>
         {
@@ -814,9 +882,9 @@ public partial class MainWindow
             Owner = this,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Width = 760,
-            Height = 470,
+            Height = 500,
             MinWidth = 680,
-            MinHeight = 400
+            MinHeight = 450
         };
         var panel = new DockPanel { Margin = new Thickness(16) };
         var warning = new TextBlock
@@ -838,7 +906,7 @@ public partial class MainWindow
         var cancel = new Button { Content = "Annuler", IsCancel = true };
         var add = new Button
         {
-            Content = initialScript is null ? "Ajouter le script" : "Enregistrer le script",
+            Content = existing is null ? "Ajouter le script" : "Enregistrer le script",
             IsDefault = true
         };
         add.Click += (_, _) =>
@@ -854,20 +922,45 @@ public partial class MainWindow
         buttons.Children.Add(cancel);
         buttons.Children.Add(add);
         panel.Children.Add(buttons);
+        var unlimitedExecution = new CheckBox
+        {
+            Content = "Autoriser une exécution sans limite de temps (sinon 30 secondes)",
+            IsChecked = existing?.UnlimitedExecution ?? false,
+            Margin = new Thickness(0, 10, 0, 0)
+        };
+        DockPanel.SetDock(unlimitedExecution, Dock.Bottom);
+        panel.Children.Add(unlimitedExecution);
+        var useWindowsPowerShell = new CheckBox
+        {
+            Content = "Utiliser Windows PowerShell 5.1 (compatibilité, au lieu de PowerShell 7)",
+            IsChecked = existing?.UseWindowsPowerShell ?? false,
+            Margin = new Thickness(0, 10, 0, 0)
+        };
+        DockPanel.SetDock(useWindowsPowerShell, Dock.Bottom);
+        panel.Children.Add(useWindowsPowerShell);
         panel.Children.Add(editor);
         dialog.Content = panel;
 
-        return dialog.ShowDialog() == true ? editor.Text : null;
+        return dialog.ShowDialog() == true
+            ? new MacroAction
+            {
+                Kind = MacroActionKind.PowerShell,
+                Value = editor.Text,
+                Target = existing?.Target ?? string.Empty,
+                UnlimitedExecution = unlimitedExecution.IsChecked == true,
+                UseWindowsPowerShell = useWindowsPowerShell.IsChecked == true
+            }
+            : null;
     }
 
     private static async Task RunPowerShellAsync(
-        string script, ActionContext context, CancellationToken cancellationToken)
+        string script, bool unlimitedExecution, bool useWindowsPowerShell,
+        ActionContext context, CancellationToken cancellationToken)
     {
-        var executable = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.System),
-            "WindowsPowerShell",
-            "v1.0",
-            "powershell.exe");
+        var executable = useWindowsPowerShell
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
+                "WindowsPowerShell", "v1.0", "powershell.exe")
+            : "pwsh.exe";
         var markerPrefix = $"__EGDN_{Guid.NewGuid():N}_";
         var logMarker = $"{markerPrefix}LOG:";
         var eventMarker = $"{markerPrefix}EVENT:";
@@ -881,8 +974,9 @@ public partial class MainWindow
             $__egEventJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{{triggerEvent}}'))
             $eg = [pscustomobject]@{ Result = {{initialResult}}; Event = (ConvertFrom-Json -InputObject $__egEventJson) }
             $eg | Add-Member -MemberType ScriptMethod -Name Log -Value {
-                param([object]$Message)
-                $payload = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([string]$Message))
+                param([object]$Message, [ValidateSet('Debug', 'Information', 'Warning', 'Error')][string]$Level = 'Information')
+                $json = ConvertTo-Json -InputObject @{ Message = [string]$Message; Level = $Level } -Compress
+                $payload = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($json))
                 [Console]::Out.WriteLine('{{logMarker}}' + $payload)
             }
             $eg | Add-Member -MemberType ScriptMethod -Name SetResult -Value {
@@ -967,19 +1061,31 @@ public partial class MainWindow
             var escapedScriptPath = scriptPath.Replace("'", "''", StringComparison.Ordinal);
             startInfo.ArgumentList.Add(
                 "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); " +
-                $"& '{escapedScriptPath}'; " +
-                "if (-not $?) { if ($null -eq $LASTEXITCODE) { exit 1 }; exit $LASTEXITCODE }");
+                $"try {{ & '{escapedScriptPath}'; " +
+                "if (-not $?) { if ($null -eq $LASTEXITCODE -or $LASTEXITCODE -eq 0) { exit 1 }; exit $LASTEXITCODE } " +
+                "} catch { Write-Error -ErrorRecord $_ -ErrorAction Continue; exit 1 }");
 
-            using var process = Process.Start(startInfo)
+            Process? startedProcess;
+            try
+            {
+                startedProcess = Process.Start(startInfo);
+            }
+            catch (System.ComponentModel.Win32Exception exception) when (
+                !useWindowsPowerShell && exception.NativeErrorCode is 2 or 3)
+            {
+                throw new InvalidOperationException(
+                    "PowerShell 7 est introuvable. Installez-le et ajoutez pwsh.exe au PATH, " +
+                    "ou sélectionnez Windows PowerShell 5.1 dans l'action.", exception);
+            }
+            using var process = startedProcess
                 ?? throw new InvalidOperationException("Impossible de démarrer PowerShell.");
             var outputTask = ReadPowerShellOutputAsync(
                 process.StandardOutput, process.StandardInput, context, logMarker, eventMarker, resultMarker, requestMarker);
             var errorTask = process.StandardError.ReadToEndAsync();
 
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-                timeout.Token,
-                cancellationToken);
+            using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            if (!unlimitedExecution)
+                linkedCancellation.CancelAfter(TimeSpan.FromSeconds(30));
             try
             {
                 var exitTask = process.WaitForExitAsync(linkedCancellation.Token);
@@ -1003,7 +1109,7 @@ public partial class MainWindow
                 }
                 catch (Exception exception) when (exception is IOException or ObjectDisposedException or OperationCanceledException)
                 {
-                    context.Log($"Communication PowerShell interrompue : {exception.Message}");
+                    context.Log($"Communication PowerShell interrompue : {exception.Message}", LogLevel.Warning);
                 }
                 _ = await errorTask;
                 if (cancellationToken.IsCancellationRequested)
@@ -1033,7 +1139,14 @@ public partial class MainWindow
         {
             if (line.StartsWith(logMarker, StringComparison.Ordinal))
             {
-                context.Log(DecodePowerShellPayload(line[logMarker.Length..]));
+                using var logJson = JsonDocument.Parse(DecodePowerShellPayload(line[logMarker.Length..]));
+                var message = logJson.RootElement.GetProperty("Message").GetString()
+                    ?? throw new JsonException("Le message de journal PowerShell est invalide.");
+                var levelName = logJson.RootElement.GetProperty("Level").GetString();
+                if (!Enum.GetNames<LogLevel>().Contains(levelName, StringComparer.OrdinalIgnoreCase) ||
+                    !Enum.TryParse<LogLevel>(levelName, true, out var level))
+                    throw new JsonException("Le niveau de journal PowerShell est invalide.");
+                context.Log(message, level);
             }
             else if (line.StartsWith(eventMarker, StringComparison.Ordinal))
             {

@@ -12,7 +12,7 @@ dotnet run
 
 Depuis une version publiée, lancez `EventGhostDotNet.exe`.
 
-Dans VS Code, la tâche « Release : arrêter, publier et redémarrer » demande la sortie des instances Release, publie un exécutable autonome et les plugins dans `bin\live`, puis démarre cette version. Les fichiers `.deps.json` des plugins, l'icône et les README sont également inclus. Une confirmation peut être nécessaire si la configuration a été modifiée ; si la fermeture est annulée ou prend plus de 30 secondes, la publication est annulée. Lors de la première utilisation avec une ancienne version ne prenant pas en charge cette demande, quittez-la manuellement depuis la zone de notification puis relancez la tâche.
+Dans VS Code, la tâche « Release : arrêter, publier et redémarrer » demande la sortie des instances Release, publie l'application et les plugins dans `bin\live`, puis démarre cette version. La publication Windows x64 nécessite le .NET 9 Desktop Runtime x64 installé sur chaque poste ; Windows App SDK est inclus. Conservez tout le dossier publié, y compris les DLL, les fichiers `.deps.json` des plugins, l'icône et les README. Une confirmation peut être nécessaire si la configuration a été modifiée ; si la fermeture est annulée ou prend plus de 30 secondes, la publication est annulée. Lors de la première utilisation avec une ancienne version ne prenant pas en charge cette demande, quittez-la manuellement depuis la zone de notification puis relancez la tâche.
 
 ## Fonctions disponibles
 
@@ -39,7 +39,7 @@ Dans VS Code, la tâche « Release : arrêter, publier et redémarrer » demande
 - Afficher en permanence les commandes Afficher EventGhost, Masquer EventGhost et Sortie dans le menu de l'icône d'application. Elles déclenchent `System.Show`, `System.Hide` et `System.Exit`; elles restent disponibles même sans menu personnalisé.
 - Exécuter une macro ou déclencher manuellement un événement exact pour exécuter les macros correspondantes.
 - Exécuter l'élément sélectionné : une macro complète ou une action seule.
-- Sélectionner plusieurs lignes du journal avec Ctrl ou Maj pour les copier avec Ctrl+C ou « Copier la sélection », et effacer le journal avec « Effacer le journal ». Le défilement automatique est suspendu tant qu'une ligne est sélectionnée. Sélectionner un seul événement reçu pour copier son nom ou l'ajouter aux déclencheurs de la macro sélectionnée ; enregistrer la configuration pour conserver la modification.
+- Sélectionner plusieurs lignes du journal avec Ctrl ou Maj pour les copier avec Ctrl+C ou « Copier la sélection », et effacer le journal avec « Effacer le journal ». Chaque ligne affiche un symbole et un niveau : Debug gris, Information bleu, Avertissement orange ou Erreur rouge. Les couleurs ANSI SGR (16 couleurs, 256 couleurs et RGB, texte et fond) restent affichées et priment sur la couleur du niveau ; les séquences correspondantes ne sont pas copiées. Le défilement automatique est suspendu tant qu'une ligne est sélectionnée. Sélectionner un seul événement reçu pour copier son nom ou l'ajouter aux déclencheurs de la macro sélectionnée ; enregistrer la configuration pour conserver la modification.
 - Déclencher `System.Startup` au démarrage et `System.ConfigurationLoaded` après le chargement ou le rechargement de la configuration.
 - Recharger manuellement la configuration depuis le menu Fichier; les macros en cours sont annulées et les ressources des plugins actifs sont libérées avant le remplacement.
 - Enregistrer et recharger les démarrages de plugins et les macros en JSON dans `%LOCALAPPDATA%\EventGhostDotNet\configuration.json`. Les anciens fichiers contenant directement un tableau de macros restent lisibles.
@@ -52,6 +52,8 @@ Les actions système peuvent activer ou désactiver une macro ou une action d'un
 Les comparaisons de `If` ne tiennent pas compte de la casse et utilisent le résultat de l'action précédente ; une action désactivée, absente ou en erreur n'a pas de résultat. Chaque action commence avec sa valeur configurée comme résultat par défaut. Un script PowerShell peut utiliser `$eg.Log("message")`, `$eg.Result = "OK"` (ou `$eg.SetResult("OK")`) et `$eg.RaiseEvent("Nom", "contenu")` ; sa sortie standard est aussi envoyée au journal. Les appels récursifs de macros et les boucles de saut sont bornés pour éviter une exécution sans fin.
 
 ### Variables et événement dans PowerShell
+
+L'action « Journaliser » permet de choisir son niveau. `$eg.Log("message")` utilise le niveau Information. Pour préciser le niveau dans un script, utilisez `$eg.Log("message", "Debug")`, `"Information"`, `"Warning"` ou `"Error"`. La sortie standard et `stderr` des programmes restent au niveau Information : leur texte ne suffit pas à déterminer si une erreur s'est produite. Les erreurs d'exécution détectées par l'application sont journalisées au niveau Erreur.
 
 Les scripts partagent des variables de session avec `$eg.SetVariable(nom, valeur)`, `$eg.GetVariable(nom)`, `$eg.HasVariable(nom)` et `$eg.RemoveVariable(nom)`. `$eg.ExchangeVariable(nom, valeur)` remplace atomiquement une valeur et retourne la précédente, ou `$null` si elle n'existait pas. `HasVariable` distingue une variable absente d'une variable contenant `$null`. Les noms distinguent les majuscules et les valeurs doivent être sérialisables en JSON. Elles restent disponibles après un rechargement de configuration ou un redémarrage des plugins, mais disparaissent à la fermeture de l'application.
 
@@ -73,6 +75,8 @@ Un plugin proposant plusieurs configurations peut aussi implémenter `IPluginIns
 
 Les plugins s'exécutent avec les droits de l'application : installer uniquement des DLL de confiance.
 
-Les scripts PowerShell s'exécutent sans profil, sans interaction, avec les droits de l'application et une limite de 30 secondes. PowerShell est configuré en UTF-8 pour sa sortie et ses erreurs, consignées dans le journal. N'exécutez que des scripts de confiance.
+Les actions de script, y compris celles déjà configurées, utilisent PowerShell 7 par défaut : il doit être installé et `pwsh.exe` accessible dans le `PATH` de l'application. Pour un script nécessitant l'ancien moteur, cochez « Utiliser Windows PowerShell 5.1 » dans son action. Vérifiez la compatibilité des scripts et modules lors du changement de version.
+
+Les scripts PowerShell s'exécutent sans profil, sans interaction et avec les droits de l'application. La limite est de 30 secondes par défaut ; cochez « Autoriser une exécution sans limite de temps » dans l'action pour la supprimer. Même sans limite de temps, un script en cours est annulé lors du rechargement de la configuration ou de la fermeture de l'application. PowerShell est configuré en UTF-8 pour sa sortie et ses erreurs, consignées dans le journal. N'exécutez que des scripts de confiance.
 
 PowerShell est le choix recommandé pour l'automatisation Windows et l'accès aux outils système. Les événements génériques peuvent aussi être déclenchés manuellement; les autres plugins et pilotes d'EventGhost ne sont pas inclus.

@@ -85,7 +85,7 @@ public sealed class FileWatcherModule : IPlugin
         watcher.Renamed += (_, args) => Raise(
             host, settings.EventPrefix, "Renamed", $"{args.OldFullPath}\n{args.FullPath}");
         watcher.Error += (_, args) => host.Log(
-            $"Erreur de surveillance du dossier {settings.Path} : {args.GetException().Message}");
+            $"Erreur de surveillance du dossier {settings.Path} : {args.GetException().Message}", LogLevel.Error);
         try
         {
             watcher.EnableRaisingEvents = true;

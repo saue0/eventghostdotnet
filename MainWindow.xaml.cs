@@ -12,6 +12,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -57,10 +58,40 @@ public partial class MainWindow : Window
         public string Source => PluginId ?? "Système";
     }
 
-    private sealed class EventLogEntry(string text, string? eventName)
+    private sealed class EventLogEntry
     {
-        public string? EventName { get; } = eventName;
-        public override string ToString() => text;
+        public EventLogEntry(string timestamp, string message, string? eventName, AnsiLogFormatter formatter, LogLevel level)
+        {
+            var (symbol, label, color) = level switch
+            {
+                LogLevel.Debug => ("◆", "DEBUG", Brushes.LightGray),
+                LogLevel.Information => ("●", "INFO", Brushes.LightSkyBlue),
+                LogLevel.Warning => ("▲", "AVERTISSEMENT", Brushes.Orange),
+                LogLevel.Error => ("✖", "ERREUR", Brushes.Salmon),
+                _ => throw new ArgumentOutOfRangeException(nameof(level), level, "Niveau de journal invalide.")
+            };
+            var prefix = $"{symbol} [{label}] [{timestamp}] ";
+            EventName = eventName;
+            Display = new TextBlock { Foreground = color };
+            Display.Inlines.Add(new Run(prefix));
+            var text = new System.Text.StringBuilder(prefix);
+            foreach (var segment in formatter.Parse(message))
+            {
+                var run = new Run(segment.Text);
+                if (segment.Foreground is { } foreground)
+                    run.Foreground = new SolidColorBrush(foreground);
+                if (segment.Background is { } background)
+                    run.Background = new SolidColorBrush(background);
+                Display.Inlines.Add(run);
+                text.Append(segment.Text);
+            }
+            Text = text.ToString();
+        }
+
+        public string? EventName { get; }
+        public TextBlock Display { get; }
+        public string Text { get; }
+        public override string ToString() => Text;
     }
 
     private sealed record SystemMacroChoice(MacroDefinition Macro, string Label);
@@ -86,6 +117,7 @@ public partial class MainWindow : Window
         MainWindow window, CancellationToken sessionToken, object? initialResult, TriggerEvent? triggerEvent = null) : IActionContext
     {
         private readonly object _resultLock = new();
+        private readonly AnsiLogFormatter _logFormatter = new();
         private object? _result = initialResult;
         public TriggerEvent? Event => triggerEvent;
         public MainWindow Window => window;
@@ -105,8 +137,14 @@ public partial class MainWindow : Window
             }
         }
 
-        public void Log(string message) =>
-            window.Dispatcher.BeginInvoke(new Action(() => window.WriteLog(message)));
+        public void Log(string message) => Log(message, LogLevel.Information);
+
+        public void Log(string message, LogLevel level)
+        {
+            if (!Enum.IsDefined(level))
+                throw new InvalidOperationException($"Niveau de journal invalide : {level}.");
+            window.Dispatcher.BeginInvoke(new Action(() => window.WriteLog(message, null, _logFormatter, level)));
+        }
 
         public void RaiseEvent(string name, string? payload) => RaiseEventFromSource(name, payload, null);
 
@@ -135,6 +173,7 @@ public partial class MainWindow : Window
         public void SetTrayMenuItems(string pluginId, IReadOnlyList<PluginTrayMenuItem> items) =>
             window.SetPluginTrayMenuItems(pluginId, items);
         public void Log(string message) => context.Log(message);
+        public void Log(string message, LogLevel level) => context.Log(message, level);
         public void RaiseEvent(string name, string? payload) => context.RaiseEventFromSource(name, payload, sourceId);
     }
 
@@ -262,7 +301,7 @@ public partial class MainWindow : Window
         SelectStartupSection();
         EnsureApplicationTrayIcon();
         if (System.Windows.Application.Current is App { NotificationError: { } notificationError })
-            WriteLog($"Notifications Windows indisponibles : {notificationError}");
+            WriteLog($"Notifications Windows indisponibles : {notificationError}", LogLevel.Warning);
         await _pluginLifecycleGate.WaitAsync();
         try
         {
@@ -356,7 +395,7 @@ public partial class MainWindow : Window
             }
             catch (Exception exception)
             {
-                WriteLog($"Erreur d'arrêt des macros : {exception.Message}");
+                WriteLog($"Erreur d'arrêt des macros : {exception.Message}", LogLevel.Error);
             }
             foreach (var plugin in _pluginLoader.Plugins)
             {
@@ -366,7 +405,7 @@ public partial class MainWindow : Window
                 }
                 catch (Exception exception)
                 {
-                    WriteLog($"Erreur de fermeture du plugin {plugin.Id} : {exception.Message}");
+                    WriteLog($"Erreur de fermeture du plugin {plugin.Id} : {exception.Message}", LogLevel.Error);
                 }
             }
             DisposeApplicationTrayIcon();
@@ -520,7 +559,7 @@ public partial class MainWindow : Window
             }
             catch (Exception exception)
             {
-                WriteLog($"Erreur d'arrêt du plugin {plugin.Id} : {exception.Message}");
+                WriteLog($"Erreur d'arrêt du plugin {plugin.Id} : {exception.Message}", LogLevel.Error);
                 failures.Add(exception);
             }
         }
@@ -540,7 +579,7 @@ public partial class MainWindow : Window
             if (plugin is null)
             {
                 var error = new InvalidOperationException($"Plugin introuvable : {configuration.PluginId}");
-                WriteLog($"Démarrage impossible : {error.Message}");
+                WriteLog($"Démarrage impossible : {error.Message}", LogLevel.Error);
                 failures.Add(error);
                 continue;
             }
@@ -558,7 +597,7 @@ public partial class MainWindow : Window
             }
             catch (Exception exception)
             {
-                WriteLog($"Erreur de démarrage du plugin {plugin.Id} : {exception.Message}");
+                WriteLog($"Erreur de démarrage du plugin {plugin.Id} : {exception.Message}", LogLevel.Error);
                 failures.Add(exception);
             }
         }
@@ -586,7 +625,7 @@ public partial class MainWindow : Window
         }
         catch (AggregateException exception)
         {
-            WriteLog($"Erreur de redémarrage des plugins : {exception.Message}");
+            WriteLog($"Erreur de redémarrage des plugins : {exception.Message}", LogLevel.Error);
             if (!_isClosed)
                 MessageBox.Show(this, exception.Message, "Erreur de plugin", MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -907,7 +946,7 @@ public partial class MainWindow : Window
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
         {
-            WriteLog($"Impossible de recharger la configuration : {exception.Message}");
+            WriteLog($"Impossible de recharger la configuration : {exception.Message}", LogLevel.Error);
             MessageBox.Show(this, $"La configuration actuelle est conservée.\n{exception.Message}",
                 "Erreur de rechargement", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
@@ -928,7 +967,7 @@ public partial class MainWindow : Window
             }
             catch (AggregateException exception)
             {
-                WriteLog($"Impossible de recharger la configuration : {exception.Message}");
+                WriteLog($"Impossible de recharger la configuration : {exception.Message}", LogLevel.Error);
                 if (!_isClosed)
                     MessageBox.Show(this, exception.Message, "Erreur de rechargement",
                         MessageBoxButton.OK, MessageBoxImage.Error);
@@ -1004,7 +1043,7 @@ public partial class MainWindow : Window
             {
                 Topmost = true;
                 if (!ShowMainWindow())
-                    WriteLog("Windows n'a pas autorisé l'activation de la fenêtre de confirmation.");
+                    WriteLog("Windows n'a pas autorisé l'activation de la fenêtre de confirmation.", LogLevel.Warning);
                 _isExiting = true;
                 Close();
             }
@@ -1119,7 +1158,7 @@ public partial class MainWindow : Window
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
         {
             _startupWindowMode = StartupWindowMode.Show;
-            WriteLog($"Impossible de charger la configuration : {exception.Message}");
+            WriteLog($"Impossible de charger la configuration : {exception.Message}", LogLevel.Error);
             if (MacroGroups.Count == 0)
                 MacroGroups.Add(new MacroGroup());
             AddMacroToGroup(CreateSampleMacro(), MacroGroups[0]);
@@ -1419,7 +1458,7 @@ public partial class MainWindow : Window
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            WriteLog($"Échec de l'enregistrement : {exception.Message}");
+            WriteLog($"Échec de l'enregistrement : {exception.Message}", LogLevel.Error);
             MessageBox.Show(this, $"La configuration n'a pas pu être enregistrée.\n{exception.Message}",
                 "Erreur d'enregistrement", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
@@ -1459,7 +1498,7 @@ public partial class MainWindow : Window
         }
         catch (ExternalException exception)
         {
-            WriteLog($"Impossible de copier le journal : {exception.Message}");
+            WriteLog($"Impossible de copier le journal : {exception.Message}", LogLevel.Error);
             MessageBox.Show(this, exception.Message, "Erreur de presse-papiers", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -1467,6 +1506,8 @@ public partial class MainWindow : Window
     private void ClearLog_Click(object sender, RoutedEventArgs e) => LogList.Items.Clear();
 
     private void WriteLog(string message) => WriteLog(message, null);
+
+    private void WriteLog(string message, LogLevel level) => WriteLog(message, null, level: level);
 
     private void LogList_Loaded(object sender, RoutedEventArgs e) => ScrollLogToEnd();
 
@@ -1492,10 +1533,11 @@ public partial class MainWindow : Window
         return null;
     }
 
-    private void WriteLog(string message, string? eventName)
+    private void WriteLog(
+        string message, string? eventName, AnsiLogFormatter? formatter = null, LogLevel level = LogLevel.Information)
     {
-        var line = $"[{DateTime.Now:HH:mm:ss}] {message}";
-        LogList.Items.Add(new EventLogEntry(line, eventName));
+        var timestamp = DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+        LogList.Items.Add(new EventLogEntry(timestamp, message, eventName, formatter ?? new AnsiLogFormatter(), level));
         while (LogList.Items.Count > 500)
             LogList.Items.RemoveAt(0);
         ScrollLogToEnd();

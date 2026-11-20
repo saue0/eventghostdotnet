@@ -29,11 +29,11 @@ internal sealed class PluginLoader
     private readonly Dictionary<string, IPlugin> _plugins = new(StringComparer.OrdinalIgnoreCase);
     public IEnumerable<IPlugin> Plugins => _plugins.Values;
 
-    public void Load(string directory, Action<string> log)
+    public void Load(string directory, Action<string, LogLevel> log)
     {
         if (!Directory.Exists(directory))
         {
-            log($"Dossier des plugins introuvable : {directory}");
+            log($"Dossier des plugins introuvable : {directory}", LogLevel.Warning);
             return;
         }
 
@@ -52,12 +52,12 @@ internal sealed class PluginLoader
             }
             catch (Exception exception)
             {
-                log($"Impossible de charger le plugin {path} : {exception.Message}");
+                log($"Impossible de charger le plugin {path} : {exception.Message}", LogLevel.Error);
             }
         }
     }
 
-    private void LoadPlugin(Type type, Action<string> log)
+    private void LoadPlugin(Type type, Action<string, LogLevel> log)
     {
         IPlugin? plugin = null;
         try
@@ -73,11 +73,11 @@ internal sealed class PluginLoader
             var name = plugin.Name;
             _plugins.Add(id, plugin);
             plugin = null;
-            log($"Plugin chargé : {name} ({id}).");
+            log($"Plugin chargé : {name} ({id}).", LogLevel.Information);
         }
         catch (Exception exception)
         {
-            log($"Impossible de charger le plugin {type.FullName} : {exception.Message}");
+            log($"Impossible de charger le plugin {type.FullName} : {exception.Message}", LogLevel.Error);
             if (plugin is not null)
             {
                 try
@@ -86,7 +86,7 @@ internal sealed class PluginLoader
                 }
                 catch (Exception disposeException)
                 {
-                    log($"Impossible de libérer le plugin {type.FullName} : {disposeException.Message}");
+                    log($"Impossible de libérer le plugin {type.FullName} : {disposeException.Message}", LogLevel.Error);
                 }
             }
         }

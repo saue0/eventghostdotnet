@@ -10,6 +10,14 @@ public sealed record PluginStartupData(string ConfigurationId, string InstanceId
 
 public sealed record PluginTrayMenuItem(string Label, string EventName, bool IsSeparator = false);
 
+public enum LogLevel
+{
+    Debug,
+    Information,
+    Warning,
+    Error
+}
+
 public interface IActionContext
 {
     object? Result
@@ -19,6 +27,12 @@ public interface IActionContext
     }
 
     void Log(string message);
+    void Log(string message, LogLevel level)
+    {
+        if (level != LogLevel.Information)
+            throw new NotSupportedException("Ce contexte ne prend pas en charge les niveaux de journal.");
+        Log(message);
+    }
     void RaiseEvent(string name, string? payload);
 }
 

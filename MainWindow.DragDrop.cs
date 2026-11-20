@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using EventGhostDotNet.PluginContracts;
 using DragDrop = System.Windows.DragDrop;
 using DragDropEffects = System.Windows.DragDropEffects;
 using DragEventArgs = System.Windows.DragEventArgs;
@@ -171,7 +172,7 @@ public partial class MainWindow
         }
         else
         {
-            WriteLog($"Déplacement impossible : {reason}");
+            WriteLog($"Déplacement impossible : {reason}", LogLevel.Warning);
         }
         ClearTreeDropFeedback();
     }

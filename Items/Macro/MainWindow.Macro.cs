@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using EventGhostDotNet.PluginContracts;
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
@@ -262,7 +263,8 @@ public partial class MainWindow
                 break;
             if (++actionExecutions > MaximumActionExecutionsPerMacro)
             {
-                WriteLog($"Limite de {MaximumActionExecutionsPerMacro} exécutions d'actions atteinte dans « {macro.Name} ».");
+                WriteLog($"Limite de {MaximumActionExecutionsPerMacro} exécutions d'actions atteinte dans « {macro.Name} ».",
+                    LogLevel.Warning);
                 break;
             }
 
@@ -289,7 +291,7 @@ public partial class MainWindow
                 switch (action.Kind)
                 {
                     case MacroActionKind.Log:
-                        actionContext.Log(action.Value);
+                        actionContext.Log(action.Value, action.LogLevel ?? LogLevel.Information);
                         break;
                     case MacroActionKind.Delay:
                         if (!int.TryParse(action.Value, out var milliseconds) || milliseconds is < 0 or > 600000)
@@ -309,7 +311,8 @@ public partial class MainWindow
                         Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
                         break;
                     case MacroActionKind.PowerShell:
-                        await RunPowerShellAsync(action.Value, actionContext, cancellationToken);
+                        await RunPowerShellAsync(action.Value, action.UnlimitedExecution, action.UseWindowsPowerShell,
+                            actionContext, cancellationToken);
                         break;
                     case MacroActionKind.RaiseEvent:
                         if (string.IsNullOrWhiteSpace(action.Target))
@@ -376,7 +379,7 @@ public partial class MainWindow
                                                System.ComponentModel.Win32Exception or
                                                System.Security.SecurityException)
             {
-                actionContext.Log($"Erreur dans « {macro.Name} » ({action.Kind}) : {exception.Message}");
+                actionContext.Log($"Erreur dans « {macro.Name} » ({action.Kind}) : {exception.Message}", LogLevel.Error);
                 actionContext.Result = null;
             }
 

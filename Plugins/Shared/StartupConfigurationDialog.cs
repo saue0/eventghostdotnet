@@ -127,7 +127,7 @@ internal sealed class StartupTaskGroup
         }
         catch (Exception exception)
         {
-            host.Log($"Erreur du plugin ({description}) : {exception.Message}");
+            host.Log($"Erreur du plugin ({description}) : {exception.Message}", LogLevel.Error);
             throw;
         }
     }

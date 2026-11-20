@@ -36,7 +36,7 @@
   </ItemGroup>
 
   <Target Name="CopyBuiltInPlugins" AfterTargets="Build">
-    <MSBuild Projects="Plugins\Display\Display.csproj;Plugins\Logitech\Logitech.csproj;Plugins\SystemTrayMenu\SystemTrayMenu.csproj;Plugins\Wallpaper\Wallpaper.csproj;Plugins\Scheduler\Scheduler.csproj;Plugins\FileWatcher\FileWatcher.csproj;Plugins\ProcessWatcher\ProcessWatcher.csproj" Targets="GetTargetPath">
+    <MSBuild Projects="Plugins\Display\Display.csproj;Plugins\Logitech\Logitech.csproj;Plugins\SystemTrayMenu\SystemTrayMenu.csproj;Plugins\Wallpaper\Wallpaper.csproj;Plugins\Scheduler\Scheduler.csproj;Plugins\FileWatcher\FileWatcher.csproj;Plugins\ProcessWatcher\ProcessWatcher.csproj" Targets="GetTargetPath" RemoveProperties="RuntimeIdentifier">
       <Output TaskParameter="TargetOutputs" ItemName="BuiltInPluginAssemblies" />
     </MSBuild>
     <Copy SourceFiles="@(BuiltInPluginAssemblies)"

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -42,7 +43,8 @@ public partial class App : Application
                     manager.NotificationInvoked -= NotificationInvoked;
             }
         }
-        catch (Exception exception) when (exception is COMException or InvalidOperationException or
+        catch (Exception exception) when (exception is COMException or FileNotFoundException or DllNotFoundException or
+                                           InvalidOperationException or
                                            UnauthorizedAccessException or NotSupportedException or
                                            TypeInitializationException or System.ComponentModel.Win32Exception)
         {
