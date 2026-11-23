@@ -4,10 +4,12 @@ Résumé de l'état du projet pour reprendre le travail dans VS Code ou une futu
 
 ## Projet
 
-- Application Windows WPF, cible `net9.0-windows10.0.19041.0`, `Microsoft.WindowsAppSDK` 2.7.0, WebView2, Markdig.
+- Application Windows WPF, cible `net9.0-windows10.0.19041.0`, Markdig. Les notifications sont des fenêtres WPF (`NotificationService` / `NotificationWindow`) et la documentation Markdown est rendue en `FlowDocument` (`MarkdownFlowDocumentRenderer`) : ni Windows App SDK ni WebView2 ne sont référencés.
 - Ouvrir `EventGhostDotNet.sln` (application, contrats, plugins intégrés, cœur testable, tests).
 - Construire et lancer : `dotnet build EventGhostDotNet.sln`, puis `dotnet run --project EventGhostDotNet.csproj`.
 - Configuration utilisateur : `%LOCALAPPDATA%\EventGhostDotNet\configuration.json`, sauvegarde précédente dans `configuration.json.bak`.
+- Instance unique par session (`SingleInstanceGuard` : mutex `Local\EventGhostDotNet.Instance` + pipe nommé) ; un second lancement réactive la fenêtre existante.
+- Erreurs inattendues : gestionnaires globaux dans `App` et journal `%LOCALAPPDATA%\EventGhostDotNet\errors.log` (rotation en `.old` à 1 Mo).
 
 ## Organisation
 
@@ -24,6 +26,7 @@ Services extraits de `MainWindow` :
 - `ConfigurationStore` : normalisation du JSON, sérialisation, écriture atomique (`Core.Storage.AtomicFile`).
 - `PluginRuntime` : chargement, verrou de cycle de vie (`EnterAsync`), démarrage, arrêt, libération des plugins.
 - `ConfigurationDocument` : forme sérialisée, avec `SchemaVersion`.
+- `NotificationService` / `NotificationWindow` / `NotificationHistoryWindow` : notifications empilées en bas à droite de l'écran principal (zone de travail `GetMonitorInfo` convertie en DIP avec le DPI de la fenêtre, repli `SystemParameters.WorkArea`), recalculées sur `DisplaySettingsChanged` et `DpiChanged`, remplacement par clé, clic pour afficher EventGhost, historique de 50 entrées cliquable depuis le menu de l'icône.
 
 ## Configuration
 
@@ -38,11 +41,12 @@ Services extraits de `MainWindow` :
 - `host.UserInterface` expose aussi `ShowDialog`, `ShowMessage` et `Confirm`.
 - Le chargeur lit `Plugins/plugins.manifest` (une DLL par ligne, chemins relatifs). Sans manifeste, il retombe sur la convention `Plugins/<Nom>/<Nom>.dll` et les DLL à la racine de `Plugins`, sans scan récursif des dépendances.
 - Le manifeste est généré par les cibles `CopyBuiltInPlugins` et `PublishBuiltInPlugins`. Un plugin ajouté à la main dans une version publiée doit être ajouté au manifeste, ou le manifeste doit être supprimé pour revenir à la convention.
+- Les capacités dépendantes de Windows sont exposées par `IPluginHost.IdleTime`, `Monitors` et `HidDevices` (interfaces dans `PluginContracts/PlatformServices.cs`, `null` si indisponibles). Les implémentations Win32 sont regroupées dans `Platform/Windows/` ; la zone de notification de l'application passe par `ITrayIconService` (`Platform/Windows/WindowsTrayIconService.cs`). `host.Session` expose le verrouillage et la veille : l'inactivité est suspendue et repart au déverrouillage, et Logitech ferme puis rouvre la connexion HID à la reprise. L'inactivité est suivie en 64 bits (`TickCount64`), y compris au-delà du cycle de 49,7 jours de `GetLastInputInfo` ; un échec de cette API est journalisé une seule fois dans `errors.log` et ne déclenche plus de planification. Les listes d'écrans et d'interfaces HID sont mises en cache : `SystemEvents.DisplaySettingsChanged` vide le cache des moniteurs, et une fenêtre de messages `WM_DEVICECHANGE` (`RegisterDeviceNotification`, GUID HID) vide celui du HID et notifie `IHidDeviceService.DevicesChanged` ; Logitech réessaie alors immédiatement au lieu d'attendre 2 s. L'icône de notification (`WindowsTrayIconService`) recharge sa frame à la taille système au changement d'affichage, se réaffiche sur `TaskbarCreated` après un redémarrage de l'Explorateur, ouvre la fenêtre au clic gauche et borne l'info-bulle à 63 caractères ; `Assets/EventGhostDotNet.ico` contient les tailles 16, 20, 24, 32, 48 et 256.
 
 ## Vérifications
 
 - `dotnet restore EventGhostDotNet.csproj -p:EnableWindowsTargeting=true` : OK.
-- Sous Linux, la compilation complète échoue uniquement sur l'outil Windows `MakePri.exe` (`Exec format error`) : le C# est compilé, la génération PRI doit se faire sur Windows.
+- Sous Linux, `dotnet build EventGhostDotNet.csproj -p:EnableWindowsTargeting=true` et `dotnet build EventGhostDotNet.sln -p:EnableWindowsTargeting=true` réussissent entièrement depuis la suppression de Windows App SDK (plus de `MakePri.exe` ni de génération PRI).
 - `dotnet test Tests/EventGhostDotNet.Core.Tests/EventGhostDotNet.Core.Tests.csproj` : tests du cœur, sans WPF.
 - La CI `.github/workflows/ci.yml` compile la solution et exécute les tests sur `windows-latest`.
 

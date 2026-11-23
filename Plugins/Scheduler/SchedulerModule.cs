@@ -1,8 +1,5 @@
-using System.ComponentModel;
 using System.Globalization;
-using System.Runtime.InteropServices;
 using System.Text.Json;
-using System.Windows;
 using EventGhostDotNet.PluginContracts;
 using EventGhostDotNet.Plugins.Shared;
 
@@ -190,18 +187,27 @@ public sealed class SchedulerModule : IPlugin
 
     private static async Task RunScheduleAsync(Schedule schedule, IPluginHost host, CancellationToken cancellationToken)
     {
+        var idleProvider = host.IdleTime;
+        if (schedule.Kind == "Idle" && idleProvider is null)
+        {
+            host.Log("Planificateur : l'inactivité système n'est pas disponible sur cette plateforme ; planification ignorée.",
+                LogLevel.Warning);
+            return;
+        }
+
         var now = DateTime.Now;
         var lastMinute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0);
         var idleTriggered = false;
-        uint? lastInput = null;
+        long? lastInput = null;
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
             now = DateTime.Now;
             if (schedule.Kind == "Idle")
             {
-                var (idle, input) = GetIdleState();
-                if (ShouldTriggerIdle(ref lastInput, ref idleTriggered, input, idle, schedule.IdleSeconds))
+                var snapshot = idleProvider!.GetIdleSnapshot();
+                var seconds = (uint)Math.Clamp(snapshot.IdleTime.TotalSeconds, 0, uint.MaxValue);
+                if (ShouldTriggerIdle(ref lastInput, ref idleTriggered, snapshot.InputToken, seconds, schedule.IdleSeconds))
                     host.RaiseEvent(schedule.EventName, now.ToString("O", CultureInfo.InvariantCulture));
                 continue;
             }
@@ -228,7 +234,7 @@ public sealed class SchedulerModule : IPlugin
     }
 
     internal static bool ShouldTriggerIdle(
-        ref uint? lastInput, ref bool triggered, uint input, uint seconds, int threshold)
+        ref long? lastInput, ref bool triggered, long input, uint seconds, int threshold)
     {
         if (lastInput != input || seconds < threshold)
             triggered = false;
@@ -238,25 +244,6 @@ public sealed class SchedulerModule : IPlugin
         triggered = true;
         return true;
     }
-
-    private static (uint Seconds, uint LastInput) GetIdleState()
-    {
-        var input = new LastInputInfo { Size = (uint)Marshal.SizeOf<LastInputInfo>() };
-        if (!GetLastInputInfo(ref input))
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        return (unchecked((uint)Environment.TickCount - input.Time) / 1000, input.Time);
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct LastInputInfo
-    {
-        public uint Size;
-        public uint Time;
-    }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetLastInputInfo(ref LastInputInfo info);
 
     internal static string DescribeSchedule(Schedule schedule) => schedule.Kind switch
     {

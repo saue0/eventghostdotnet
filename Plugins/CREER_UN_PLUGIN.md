@@ -86,6 +86,7 @@ Les actions reçoivent un `IPluginHost` et un jeton d'annulation :
 - `host.RaiseEvent(name, payload)` émet un événement que les macros peuvent écouter.
 - `host.GetMacros()` retourne les identifiants et noms des macros configurées ; `host.RunMacroAsync(id, cancellationToken)` exécute une macro active par son identifiant et signale une cible absente ou désactivée.
 - `host.UserInterface` fournit les services d'interface sans dépendance WPF dans le contrat : `NativeOwner` (fenêtre native, `null` pour un hôte sans interface), `ShowDialog(dialog)`, `ShowMessage(message, title)` et `Confirm(message, title)`. Un plugin WPF récupère la fenêtre hôte avec l'extension `OwnerWindow()` de `Plugins\Shared\PluginHostWindows.cs`.
+- `host.IdleTime`, `host.Monitors` et `host.HidDevices` exposent les capacités de la plateforme (inactivité, moniteurs DDC/CI, interfaces HID). Elles peuvent être `null` : testez leur présence et dégradez proprement au lieu d'appeler directement des API Windows.
 
 Les actions longues devraient être asynchrones et vérifier `cancellationToken`. Les macros peuvent s'exécuter simultanément : synchronisez tout état partagé par les actions du plugin. En cas d'échec, signalez-le par une exception plutôt que de retourner une réussite factice.
 

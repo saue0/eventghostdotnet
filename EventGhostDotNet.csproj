@@ -3,15 +3,12 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
-    <WindowsPackageType>None</WindowsPackageType>
-    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <WebView2EnableCsWinRTProjection>false</WebView2EnableCsWinRTProjection>
     <ApplicationIcon>Assets\EventGhostDotNet.ico</ApplicationIcon>
   </PropertyGroup>
 
@@ -25,8 +22,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.7.0" />
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3719.77" />
     <PackageReference Include="Markdig" Version="0.41.3" />
     <Compile Remove="Plugins\**\*.cs;PluginContracts\**\*.cs;Core\**\*.cs;Tests\**\*.cs" />
     <ProjectReference Include="Core\EventGhostDotNet.Core.csproj" GlobalPropertiesToRemove="PublishDir" />

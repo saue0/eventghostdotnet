@@ -56,6 +56,18 @@ public interface IPluginUserInterface
 public interface IPluginHost : IActionContext
 {
     IPluginUserInterface UserInterface { get; }
+
+    /// <summary>Inactivité système, ou <c>null</c> si la plateforme ne l'expose pas.</summary>
+    IIdleTimeProvider? IdleTime => null;
+
+    /// <summary>Moniteurs DDC/CI, ou <c>null</c> si la plateforme ne les expose pas.</summary>
+    IMonitorService? Monitors => null;
+
+    /// <summary>Interfaces HID, ou <c>null</c> si la plateforme ne les expose pas.</summary>
+    IHidDeviceService? HidDevices => null;
+
+    /// <summary>État de session (verrouillage, veille), ou <c>null</c> si la plateforme ne l'expose pas.</summary>
+    ISessionState? Session => null;
     IReadOnlyList<PluginActionData> GetConfiguredActions(string pluginId);
     IReadOnlyList<PluginStartupData> GetPluginStartupConfigurations(string pluginId) => [];
     void SetTrayMenuItems(string pluginId, IReadOnlyList<PluginTrayMenuItem> items) { }

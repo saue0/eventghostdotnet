@@ -1,8 +1,7 @@
 using System.Buffers.Binary;
 using System.ComponentModel;
 using System.IO;
-using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
+using EventGhostDotNet.PluginContracts;
 
 namespace EventGhostDotNet.Plugins.Logitech;
 
@@ -30,6 +29,8 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
     private readonly string _eventPrefix;
     private readonly Action<string, string?> _eventCallback;
     private readonly Action<string> _logCallback;
+    private readonly IHidDeviceService _hidDevices;
+    private readonly ISessionState? _session;
     private readonly CancellationTokenSource _stop = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly object _streamLock = new();
@@ -38,20 +39,44 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
     private readonly Dictionary<byte, byte> _batteryFeatures = [];
     private FileStream? _stream;
     private Task? _worker;
+    private TaskCompletionSource _deviceChange = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public LogitechUnifyClient(
         LogitechReceiver receiver,
         string eventPrefix,
         Action<string, string?> eventCallback,
-        Action<string> logCallback)
+        Action<string> logCallback,
+        IHidDeviceService hidDevices,
+        ISessionState? session = null)
     {
         _devicePath = receiver.Path;
         _eventPrefix = string.IsNullOrWhiteSpace(eventPrefix) ? "Logitech" : eventPrefix.Trim();
         _eventCallback = eventCallback;
         _logCallback = logCallback;
+        _hidDevices = hidDevices;
+        _session = session;
+        _hidDevices.DevicesChanged += OnDevicesChanged;
+        if (session is not null)
+            session.StatusChanged += OnSessionStatusChanged;
     }
 
-    public static IReadOnlyList<LogitechReceiver> FindReceivers() => LogitechHidNative.FindReceivers();
+    public static IReadOnlyList<LogitechReceiver> FindReceivers(IHidDeviceService? hidDevices)
+    {
+        if (hidDevices is null)
+            throw new NotSupportedException("Les périphériques HID ne sont pas disponibles sur cette plateforme.");
+        return hidDevices.EnumerateDevicePaths()
+            .Where(IsSupportedReceiver)
+            .Select(path => new LogitechReceiver(path,
+                $"Logitech {(path.Contains("pid_c52b", StringComparison.OrdinalIgnoreCase) ? "Unifying" : "Bolt")} — {path}"))
+            .ToArray();
+    }
+
+    private static bool IsSupportedReceiver(string path)
+    {
+        var lower = path.ToLowerInvariant();
+        return (lower.Contains("vid_046d&pid_c52b") || lower.Contains("vid_046d&pid_c548")) &&
+               lower.Contains("&mi_02&col02");
+    }
 
     public void Start()
     {
@@ -111,6 +136,9 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
             }
         }
 
+        _hidDevices.DevicesChanged -= OnDevicesChanged;
+        if (_session is not null)
+            _session.StatusChanged -= OnSessionStatusChanged;
         _stop.Dispose();
         _writeLock.Dispose();
     }
@@ -119,9 +147,10 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            await WaitForActiveAsync(cancellationToken);
             try
             {
-                using var handle = LogitechHidNative.Open(_devicePath);
+                using var handle = _hidDevices.Open(_devicePath);
                 var stream = new FileStream(handle, FileAccess.ReadWrite, 20, isAsync: true);
                 lock (_streamLock)
                     _stream = stream;
@@ -155,8 +184,16 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
             {
                 if (!cancellationToken.IsCancellationRequested)
                 {
-                    _logCallback($"Récepteur Logitech indisponible : {exception.Message} Nouvelle tentative dans 2 s.");
-                    await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                    try
+                    {
+                        await WaitBeforeRetryAsync(
+                            $"Récepteur Logitech indisponible : {exception.Message} Nouvelle tentative automatique.",
+                            cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
                 }
             }
             finally
@@ -165,6 +202,47 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
                     _stream = null;
             }
         }
+    }
+
+    private void OnDevicesChanged() => Interlocked.Exchange(ref _deviceChange,
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
+        .TrySetResult();
+
+    private void OnSessionStatusChanged(SessionStatus status)
+    {
+        if (status == SessionStatus.Active)
+            return;
+
+        FileStream? stream;
+        lock (_streamLock)
+        {
+            stream = _stream;
+            _stream = null;
+        }
+        stream?.Dispose();
+    }
+
+    private async Task WaitForActiveAsync(CancellationToken cancellationToken)
+    {
+        while (_session is { Status: not SessionStatus.Active })
+            await Task.Delay(500, cancellationToken);
+    }
+
+    private async Task WaitBeforeRetryAsync(string message, CancellationToken cancellationToken)
+    {
+        if (_session is { Status: not SessionStatus.Active })
+        {
+            await WaitForActiveAsync(cancellationToken);
+            return;
+        }
+
+        _logCallback(message);
+
+        // Réessai après 2 s, ou immédiatement dès qu'une interface HID change.
+        await Task.WhenAny(
+            Task.Delay(TimeSpan.FromSeconds(2), cancellationToken),
+            Volatile.Read(ref _deviceChange).Task);
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     private async Task ProcessReportAsync(byte[] report, CancellationToken cancellationToken)
@@ -294,116 +372,4 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
             throw new InvalidOperationException("Saisissez une suite d'octets hexadécimaux, par exemple 11 01 00 0D.");
         return Convert.FromHexString(compact);
     }
-}
-
-internal static class LogitechHidNative
-{
-    private const uint DevicePresent = 0x00000002;
-    private const uint DeviceInterface = 0x00000010;
-    private const uint GenericRead = 0x80000000;
-    private const uint GenericWrite = 0x40000000;
-    private const uint OpenExisting = 3;
-    private const uint Overlapped = 0x40000000;
-    private static readonly IntPtr InvalidHandleValue = new(-1);
-
-    public static IReadOnlyList<LogitechReceiver> FindReceivers()
-    {
-        HidD_GetHidGuid(out var hidGuid);
-        var info = SetupDiGetClassDevs(ref hidGuid, IntPtr.Zero, IntPtr.Zero, DevicePresent | DeviceInterface);
-        if (info == InvalidHandleValue)
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "Impossible d'énumérer les interfaces HID.");
-
-        try
-        {
-            var receivers = new List<LogitechReceiver>();
-            for (uint index = 0; ; index++)
-            {
-                var interfaceData = new DeviceInterfaceData { Size = Marshal.SizeOf<DeviceInterfaceData>() };
-                if (!SetupDiEnumDeviceInterfaces(info, IntPtr.Zero, ref hidGuid, index, ref interfaceData))
-                {
-                    var error = Marshal.GetLastWin32Error();
-                    if (error == 259)
-                        break;
-                    throw new Win32Exception(error, "Impossible de lire la liste des périphériques HID.");
-                }
-
-                _ = SetupDiGetDeviceInterfaceDetail(info, ref interfaceData, IntPtr.Zero, 0, out var requiredSize, IntPtr.Zero);
-                var detail = Marshal.AllocHGlobal(checked((int)requiredSize));
-                try
-                {
-                    Marshal.WriteInt32(detail, IntPtr.Size == 8 ? 8 : 6);
-                    if (!SetupDiGetDeviceInterfaceDetail(info, ref interfaceData, detail, requiredSize, out _, IntPtr.Zero))
-                        throw new Win32Exception(Marshal.GetLastWin32Error(), "Impossible de lire le chemin d'un périphérique HID.");
-                    var path = Marshal.PtrToStringUni(IntPtr.Add(detail, 4)) ?? string.Empty;
-                    if (!IsSupportedReceiver(path))
-                        continue;
-
-                    var product = path.Contains("pid_c52b", StringComparison.OrdinalIgnoreCase) ? "Unifying" : "Bolt";
-                    receivers.Add(new LogitechReceiver(path, $"Logitech {product} — {path}"));
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(detail);
-                }
-            }
-            return receivers;
-        }
-        finally
-        {
-            SetupDiDestroyDeviceInfoList(info);
-        }
-    }
-
-    public static SafeFileHandle Open(string path)
-    {
-        var handle = CreateFile(path, GenericRead | GenericWrite, 3, IntPtr.Zero, OpenExisting, Overlapped, IntPtr.Zero);
-        if (handle.IsInvalid)
-        {
-            var error = Marshal.GetLastWin32Error();
-            handle.Dispose();
-            throw new Win32Exception(error, "Impossible d'ouvrir le récepteur Logitech.");
-        }
-        return handle;
-    }
-
-    private static bool IsSupportedReceiver(string path)
-    {
-        var lower = path.ToLowerInvariant();
-        return (lower.Contains("vid_046d&pid_c52b") || lower.Contains("vid_046d&pid_c548")) &&
-               lower.Contains("&mi_02&col02");
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct DeviceInterfaceData
-    {
-        public int Size;
-        public Guid InterfaceClassGuid;
-        public int Flags;
-        public IntPtr Reserved;
-    }
-
-    [DllImport("hid.dll")]
-    private static extern void HidD_GetHidGuid(out Guid hidGuid);
-
-    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern IntPtr SetupDiGetClassDevs(
-        ref Guid classGuid, IntPtr enumerator, IntPtr parent, uint flags);
-
-    [DllImport("setupapi.dll", SetLastError = true)]
-    private static extern bool SetupDiEnumDeviceInterfaces(
-        IntPtr deviceInfoSet, IntPtr deviceInfoData, ref Guid interfaceClassGuid,
-        uint memberIndex, ref DeviceInterfaceData deviceInterfaceData);
-
-    [DllImport("setupapi.dll", EntryPoint = "SetupDiGetDeviceInterfaceDetailW", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool SetupDiGetDeviceInterfaceDetail(
-        IntPtr deviceInfoSet, ref DeviceInterfaceData deviceInterfaceData,
-        IntPtr detailData, uint detailDataSize, out uint requiredSize, IntPtr deviceInfoData);
-
-    [DllImport("setupapi.dll", SetLastError = true)]
-    private static extern bool SetupDiDestroyDeviceInfoList(IntPtr deviceInfoSet);
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern SafeFileHandle CreateFile(
-        string fileName, uint desiredAccess, uint shareMode, IntPtr securityAttributes,
-        uint creationDisposition, uint flagsAndAttributes, IntPtr templateFile);
 }

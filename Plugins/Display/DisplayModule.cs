@@ -19,12 +19,21 @@ public sealed class DisplayModule : IPlugin
         if (actionId != "DisplayInputSource")
             throw new InvalidOperationException($"Action écran inconnue : {actionId}");
 
-        IReadOnlyList<DisplayMonitor> monitors;
+        var monitorService = host.Monitors;
+        if (monitorService is null)
+        {
+            MessageBox.Show(host.OwnerWindow(), "La gestion des écrans n'est pas disponible sur cette plateforme.",
+                "Écran non pris en charge", MessageBoxButton.OK, MessageBoxImage.Information);
+            return null;
+        }
+
+        IReadOnlyList<PlatformMonitor> monitors;
         try
         {
-            monitors = DisplayPluginService.GetMonitors();
+            monitors = monitorService.GetMonitors();
         }
-        catch (Exception exception) when (exception is Win32Exception or DllNotFoundException or EntryPointNotFoundException)
+        catch (Exception exception) when (exception is Win32Exception or DllNotFoundException or
+                                           EntryPointNotFoundException or PlatformNotSupportedException)
         {
             MessageBox.Show(host.OwnerWindow(), $"Impossible d'énumérer les écrans DDC/CI.\n{exception.Message}",
                 "Erreur d'écran", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -52,7 +61,7 @@ public sealed class DisplayModule : IPlugin
         var selector = new ComboBox
         {
             ItemsSource = monitors,
-            DisplayMemberPath = nameof(DisplayMonitor.Label),
+            DisplayMemberPath = nameof(PlatformMonitor.Label),
             SelectedItem = existing is null ? monitors[0] :
                 monitors.FirstOrDefault(monitor => string.Equals(monitor.Key, existing.Target, StringComparison.OrdinalIgnoreCase)),
             Margin = new Thickness(0, 5, 0, 12)
@@ -66,7 +75,7 @@ public sealed class DisplayModule : IPlugin
         var save = new Button { Content = existing is null ? "Ajouter" : "Enregistrer", IsDefault = true, Padding = new Thickness(12, 6, 12, 6) };
         save.Click += (_, _) =>
         {
-            if (selector.SelectedItem is not DisplayMonitor || !TryParseInputSource(input.Text, out _))
+            if (selector.SelectedItem is not PlatformMonitor || !TryParseInputSource(input.Text, out _))
             {
                 MessageBox.Show(dialog, "Sélectionnez un moniteur et saisissez un code entre 0 et 255.",
                     "Configuration invalide", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -77,7 +86,7 @@ public sealed class DisplayModule : IPlugin
         buttons.Children.Add(save);
         panel.Children.Add(buttons);
         dialog.Content = panel;
-        return dialog.ShowDialog() == true && selector.SelectedItem is DisplayMonitor selected &&
+        return dialog.ShowDialog() == true && selector.SelectedItem is PlatformMonitor selected &&
                TryParseInputSource(input.Text, out var value)
             ? new PluginActionData(actionId, value.ToString(CultureInfo.InvariantCulture), selected.Key)
             : null;
@@ -90,7 +99,9 @@ public sealed class DisplayModule : IPlugin
         if (action.ActionId != "DisplayInputSource" || !uint.TryParse(action.Value, out var value))
             throw new InvalidOperationException($"Action ou source d'entrée invalide : {action.ActionId}, {action.Value}");
         cancellationToken.ThrowIfCancellationRequested();
-        DisplayPluginService.SetInputSource(action.Target, value);
+        var monitorService = host.Monitors
+            ?? throw new NotSupportedException("La gestion des écrans n'est pas disponible sur cette plateforme.");
+        monitorService.SetInputSource(action.Target, value);
         host.Log($"Entrée du moniteur {action.Target} réglée sur {value}.");
         return Task.CompletedTask;
     }

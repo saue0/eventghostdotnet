@@ -1,44 +1,30 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using EventGhostDotNet.PluginContracts;
+using Microsoft.Win32;
 
-namespace EventGhostDotNet.Plugins.Display;
+namespace EventGhostDotNet.Platform.Windows;
 
-internal sealed record DisplayMonitor(string Key, string Label);
-
-internal static class DisplayPluginService
+internal sealed class WindowsMonitorService : IMonitorService, IDisposable
 {
     private const uint MonitorInfoPrimary = 1;
     private const byte VcpInputSource = 0x60;
 
-    public static IReadOnlyList<DisplayMonitor> GetMonitors()
+    private readonly object _sync = new();
+    private IReadOnlyList<PlatformMonitor>? _cache;
+
+    public WindowsMonitorService()
     {
-        var result = new List<DisplayMonitor>();
-        EnumerateMonitors((monitor, info) =>
-        {
-            if (!TryGetPhysicalMonitors(monitor, out var physicalMonitors))
-                return true;
-
-            try
-            {
-                for (var index = 0; index < physicalMonitors.Length; index++)
-                {
-                    var primary = (info.Flags & MonitorInfoPrimary) != 0 ? " (principal)" : string.Empty;
-                    result.Add(new DisplayMonitor(
-                        $"{info.DeviceName}|{index}",
-                        $"{info.DeviceName}{primary} — {physicalMonitors[index].Description.Trim()}"));
-                }
-            }
-            finally
-            {
-                DestroyPhysicalMonitors(physicalMonitors);
-            }
-
-            return true;
-        });
-        return result;
+        SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
     }
 
-    public static void SetInputSource(string monitorKey, uint inputSource)
+    public IReadOnlyList<PlatformMonitor> GetMonitors()
+    {
+        lock (_sync)
+            return _cache ??= EnumerateMonitors();
+    }
+
+    public void SetInputSource(string monitorKey, uint inputSource)
     {
         var found = false;
         EnumerateMonitors((monitor, info) =>
@@ -69,6 +55,42 @@ internal static class DisplayPluginService
 
         if (!found)
             throw new InvalidOperationException($"Moniteur introuvable ou non compatible DDC/CI : {monitorKey}");
+    }
+
+    public void Dispose() => SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        lock (_sync)
+            _cache = null;
+    }
+
+    private static IReadOnlyList<PlatformMonitor> EnumerateMonitors()
+    {
+        var result = new List<PlatformMonitor>();
+        EnumerateMonitors((monitor, info) =>
+        {
+            if (!TryGetPhysicalMonitors(monitor, out var physicalMonitors))
+                return true;
+
+            try
+            {
+                for (var index = 0; index < physicalMonitors.Length; index++)
+                {
+                    var primary = (info.Flags & MonitorInfoPrimary) != 0 ? " (principal)" : string.Empty;
+                    result.Add(new PlatformMonitor(
+                        $"{info.DeviceName}|{index}",
+                        $"{info.DeviceName}{primary} — {physicalMonitors[index].Description.Trim()}"));
+                }
+            }
+            finally
+            {
+                DestroyPhysicalMonitors(physicalMonitors);
+            }
+
+            return true;
+        });
+        return result;
     }
 
     private static void EnumerateMonitors(Func<IntPtr, MonitorInfoEx, bool> callback)

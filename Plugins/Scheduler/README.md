@@ -11,7 +11,7 @@ Dans **Démarrage**, ajoutez ou modifiez **Planificateur**. Une configuration co
 - **Quotidienne** : chaque jour à l'heure locale indiquée (`HH:mm`).
 - **Hebdomadaire** : aux jours et à l'heure choisis. Les jours sont séparés par des virgules : `0` pour dimanche, `1` pour lundi, jusqu'à `6` pour samedi.
 - **Date précise** : à la date locale `AAAA-MM-JJ` et à l'heure choisies.
-- **Inactivité Windows** : après la durée sans saisie clavier ou souris ; la planification se réarme après une nouvelle saisie.
+- **Inactivité Windows** : après la durée sans saisie clavier ou souris ; la planification se réarme après une nouvelle saisie. Pendant le verrouillage de session ou la veille, le décompte est suspendu et repart au déverrouillage ou à la reprise.
 
 ## Actions
 

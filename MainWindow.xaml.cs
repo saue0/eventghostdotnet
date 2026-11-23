@@ -24,7 +24,7 @@ using EventGhostDotNet.Core.Configuration;
 using EventGhostDotNet.Core.Logging;
 using EventGhostDotNet.Core.Macros;
 using EventGhostDotNet.PluginContracts;
-using Forms = System.Windows.Forms;
+using EventGhostDotNet.Platform.Windows;
 using Brushes = System.Windows.Media.Brushes;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
 using Button = System.Windows.Controls.Button;
@@ -205,6 +205,10 @@ public partial class MainWindow : Window
     private sealed class PluginHost(MainWindow window, ActionContext context, string? sourceId = null) : IPluginHost
     {
         public IPluginUserInterface UserInterface { get; } = new PluginUserInterface(window);
+        public IIdleTimeProvider IdleTime => window._platform.IdleTime;
+        public IMonitorService Monitors => window._platform.Monitors;
+        public IHidDeviceService HidDevices => window._platform.HidDevices;
+        public ISessionState Session => window._platform.Session;
         public object? Result
         {
             get => context.Result;
@@ -286,9 +290,9 @@ public partial class MainWindow : Window
     private readonly StartupSection _startupSection;
     private readonly ConfigurationRoot _configurationRoot;
     private readonly MacroDefinition _startupMacro;
-    private Forms.NotifyIcon? _applicationTrayIcon;
-    private System.Drawing.Icon? _applicationTrayImage;
-    private Forms.ContextMenuStrip? _applicationTrayMenu;
+    private readonly WindowsPlatformServices _platform =
+        new(exception => EventGhostDotNet.App.LogError(exception, "Inactivité système"));
+    private ITrayIconService? _applicationTrayIcon;
     private readonly Dictionary<string, IReadOnlyList<PluginTrayMenuItem>> _pluginTrayMenuItems =
         new(StringComparer.OrdinalIgnoreCase);
     private StartupWindowMode _startupWindowMode = StartupWindowMode.Show;
@@ -422,8 +426,6 @@ public partial class MainWindow : Window
     {
         SelectStartupSection();
         EnsureApplicationTrayIcon();
-        if (System.Windows.Application.Current is App { NotificationError: { } notificationError })
-            WriteLog($"Notifications Windows indisponibles : {notificationError}", LogLevel.Warning);
         await using (await _pluginRuntime.EnterAsync())
         {
             if (_isClosed)
@@ -514,6 +516,7 @@ public partial class MainWindow : Window
             await _pluginRuntime.DisposeAllAsync(WriteLog);
             DisposeApplicationTrayIcon();
             _sessionCancellation.Dispose();
+            _platform.Dispose();
         }
     }
 
@@ -522,18 +525,11 @@ public partial class MainWindow : Window
         if (_applicationTrayIcon is not null)
             return;
 
-        var trayImage = new System.Drawing.Icon(
-            Path.Combine(AppContext.BaseDirectory, "Assets", "EventGhostDotNet.ico"));
-        var icon = new Forms.NotifyIcon
-        {
-            Icon = trayImage,
-            Text = "EventGhost .NET"
-        };
-        icon.DoubleClick += (_, _) => RaiseSystemTrayEvent(SystemShowEventName);
-        _applicationTrayIcon = icon;
-        _applicationTrayImage = trayImage;
+        var trayIcon = new WindowsTrayIconService();
+        trayIcon.Activated += () => RaiseSystemTrayEvent(SystemShowEventName);
+        _applicationTrayIcon = trayIcon;
+        trayIcon.Show(Path.Combine(AppContext.BaseDirectory, "Assets", "EventGhostDotNet.ico"), "EventGhost .NET");
         RebuildApplicationTrayMenu();
-        icon.Visible = true;
     }
 
     private void SetPluginTrayMenuItems(string pluginId, IReadOnlyList<PluginTrayMenuItem> items)
@@ -564,12 +560,12 @@ public partial class MainWindow : Window
         if (_applicationTrayIcon is null)
             return;
 
-        var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add(new Forms.ToolStripMenuItem("Afficher EventGhost", null,
-            (_, _) => RaiseSystemTrayEvent(SystemShowEventName)));
-        menu.Items.Add(new Forms.ToolStripMenuItem("Masquer EventGhost", null,
-            (_, _) => RaiseSystemTrayEvent(SystemHideEventName)));
-        menu.Items.Add(new Forms.ToolStripSeparator());
+        var items = new List<TrayMenuItem>
+        {
+            new("Afficher EventGhost", () => RaiseSystemTrayEvent(SystemShowEventName)),
+            new("Masquer EventGhost", () => RaiseSystemTrayEvent(SystemHideEventName)),
+            TrayMenuItem.Separator
+        };
 
         var customItems = _pluginTrayMenuItems
             .OrderBy(plugin => plugin.Key, StringComparer.OrdinalIgnoreCase)
@@ -597,28 +593,29 @@ public partial class MainWindow : Window
             {
                 if (item.IsSeparator)
                 {
-                    menu.Items.Add(new Forms.ToolStripSeparator());
+                    items.Add(TrayMenuItem.Separator);
                     continue;
                 }
 
-                var menuItem = new Forms.ToolStripMenuItem(item.Label);
-                menuItem.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+                items.Add(new TrayMenuItem(item.Label, () => Dispatcher.BeginInvoke(new Action(() =>
                 {
                     WriteLog($"System Tray Menu : événement « {item.EventName} » déclenché.");
                     _ = DispatchEventAsync(item.EventName, null);
-                }));
-                menu.Items.Add(menuItem);
+                }))));
             }
-            menu.Items.Add(new Forms.ToolStripSeparator());
+            items.Add(TrayMenuItem.Separator);
         }
 
-        menu.Items.Add(new Forms.ToolStripMenuItem("Sortie", null,
-            (_, _) => RaiseSystemTrayEvent(SystemExitEventName)));
-        var previousMenu = _applicationTrayMenu;
-        _applicationTrayIcon.ContextMenuStrip = menu;
-        _applicationTrayMenu = menu;
-        previousMenu?.Dispose();
+        if (!items[^1].IsSeparator)
+            items.Add(TrayMenuItem.Separator);
+        items.Add(new TrayMenuItem("Historique des notifications",
+            () => Dispatcher.BeginInvoke(new Action(OpenNotificationHistory))));
+        items.Add(new TrayMenuItem("Sortie", () => RaiseSystemTrayEvent(SystemExitEventName)));
+        _applicationTrayIcon.SetMenu(items);
     }
+
+    private static void OpenNotificationHistory() =>
+        (System.Windows.Application.Current as App)?.ShowNotificationHistory();
 
     private void RaiseSystemTrayEvent(string eventName) =>
         Dispatcher.BeginInvoke(new Action(() => _ = DispatchEventAsync(eventName, null)));
@@ -631,20 +628,8 @@ public partial class MainWindow : Window
 
     private void DisposeApplicationTrayIcon()
     {
-        var icon = _applicationTrayIcon;
-        var trayImage = _applicationTrayImage;
-        var menu = _applicationTrayMenu;
+        _applicationTrayIcon?.Dispose();
         _applicationTrayIcon = null;
-        _applicationTrayImage = null;
-        _applicationTrayMenu = null;
-        if (icon is not null)
-        {
-            icon.Visible = false;
-            icon.ContextMenuStrip = null;
-        }
-        icon?.Dispose();
-        trayImage?.Dispose();
-        menu?.Dispose();
         _pluginTrayMenuItems.Clear();
     }
 

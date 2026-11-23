@@ -156,7 +156,10 @@ public sealed class LogitechModule : IPlugin, IPluginInstanceProvider
             throw new InvalidOperationException($"Le récepteur Logitech est déjà utilisé avec le préfixe « {current.Prefix} ».");
         }
         var client = new LogitechUnifyClient(
-            new LogitechReceiver(target, target), prefix, host.RaiseEvent, host.Log);
+            new LogitechReceiver(target, target), prefix, host.RaiseEvent, host.Log,
+            host.HidDevices ?? throw new NotSupportedException(
+                "Les périphériques HID ne sont pas disponibles sur cette plateforme."),
+            host.Session);
         client.Start();
         _clients.Add(target, new Instance(client, prefix));
         host.Log($"Écoute Logitech démarrée — événements préfixés par « {prefix} ».");
@@ -178,9 +181,15 @@ public sealed class LogitechModule : IPlugin, IPluginInstanceProvider
     private static PluginActionData? ConfigureStart(PluginActionData? existing, IPluginHost host)
     {
         IReadOnlyList<LogitechReceiver> receivers;
+        if (host.HidDevices is null)
+        {
+            MessageBox.Show(host.OwnerWindow(), "La recherche HID n'est pas disponible sur cette plateforme.",
+                "HID non pris en charge", MessageBoxButton.OK, MessageBoxImage.Information);
+            return null;
+        }
         try
         {
-            receivers = LogitechUnifyClient.FindReceivers();
+            receivers = LogitechUnifyClient.FindReceivers(host.HidDevices);
         }
         catch (Exception exception) when (exception is Win32Exception or DllNotFoundException or EntryPointNotFoundException)
         {
