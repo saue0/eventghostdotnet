@@ -9,6 +9,7 @@ $releaseRoots = @(
     [System.IO.Path]::GetFullPath((Join-Path $workspace $_)).TrimEnd('\') + '\'
 }
 $publishDir = Join-Path $workspace 'bin\live'
+$project = Join-Path $workspace 'EventGhostDotNet.csproj'
 
 $instances = @(
     Get-CimInstance Win32_Process -Filter "Name = 'EventGhostDotNet.exe'" |
@@ -48,9 +49,7 @@ if (Test-Path -LiteralPath $publishDir) {
     Remove-Item -LiteralPath $publishDir -Recurse -Force
 }
 
-& dotnet publish -c Release -r win-x64 --self-contained false -o $publishDir `
-    -p:PublishSingleFile=false `
-    -p:EnableMsixTooling=true `
+& dotnet publish $project -c Release -r win-x64 --self-contained false -o $publishDir `
     -p:DebugSymbols=false
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish a échoué (code $LASTEXITCODE)."
@@ -69,11 +68,6 @@ foreach ($plugin in @('Display', 'FileWatcher', 'Logitech', 'ProcessWatcher', 'S
         }
     }
 }
-
-$iconDir = Join-Path $publishDir 'Assets'
-New-Item -ItemType Directory -Path $iconDir -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $workspace 'Assets\EventGhostDotNet.ico') `
-    -Destination (Join-Path $iconDir 'EventGhostDotNet.ico') -Force
 
 $startedProcess = Start-Process -FilePath $exe -WorkingDirectory $publishDir -PassThru
 if ($startedProcess.HasExited) {
