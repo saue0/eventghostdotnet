@@ -48,7 +48,8 @@ public partial class MainWindow
     {
         var documents = new List<HelpDocument>
         {
-            new("Application", Path.Combine(GetApplicationDirectory(), "README.md"))
+            new("Application", Path.Combine(GetApplicationDirectory(), "README.md")),
+            new("Système", Path.Combine(GetApplicationDirectory(), "Items", "README.md"))
         };
         documents.AddRange(_pluginLoader.Plugins
             .OrderBy(plugin => plugin.Name, StringComparer.CurrentCultureIgnoreCase)

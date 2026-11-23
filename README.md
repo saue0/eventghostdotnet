@@ -70,6 +70,8 @@ Les scripts partagent des variables de session avec `$eg.SetVariable(nom, valeur
 
 Les éléments de l'arborescence sont regroupés par type dans `Items` : modèle, interface XAML et méthodes associées de `MainWindow`. Ils dérivent de `ConfigurationItem` ; les conteneurs dérivent de `ConfigurationContainer` et exposent leurs enfants. Le parent est synchronisé avec les collections et n'est pas sérialisé. Les interactions communes, notamment le menu contextuel et le glisser-déposer, restent partagées.
 
+Pour le catalogue des macros, actions et événements fournis par l'application, consultez le [README du système](Items/README.md).
+
 ## Modules de plugins
 
 L'application découvre les DLL dans le dossier `Plugins` à côté de son exécutable au démarrage. Les plugins intégrés sont compilés et copiés dans ce dossier automatiquement. Pour créer et installer un plugin externe ou l'intégrer à l'application, consultez le [guide de création d'un plugin](Plugins/CREER_UN_PLUGIN.md).

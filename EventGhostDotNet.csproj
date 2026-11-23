@@ -19,7 +19,7 @@
     <Resource Include="Assets\EventGhostDotNet.ico" />
     <Content Include="Assets\EventGhostDotNet.ico" CopyToOutputDirectory="PreserveNewest" />
     <None Remove="Plugins\**\bin\**;Plugins\**\obj\**;PluginContracts\**\bin\**;PluginContracts\**\obj\**" />
-    <None Update="README.md;Plugins\CREER_UN_PLUGIN.md;Plugins\*\README.md"
+    <None Update="README.md;Items\README.md;Plugins\CREER_UN_PLUGIN.md;Plugins\*\README.md"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="Always" ExcludeFromSingleFile="true" />
   </ItemGroup>
