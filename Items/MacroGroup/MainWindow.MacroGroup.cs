@@ -21,7 +21,12 @@ public partial class MainWindow
 
     private void AddMacroGroup_Click(object sender, RoutedEventArgs e)
     {
-        var name = PromptForText("Ajouter un groupe", "Nom du groupe :", "Nouveau groupe")?.Trim();
+        AddMacroGroup("Ajouter un groupe", "Nouveau groupe");
+    }
+
+    private void AddMacroGroup(string title, string defaultName)
+    {
+        var name = PromptForText(title, "Nom du groupe :", defaultName)?.Trim();
         if (string.IsNullOrWhiteSpace(name))
             return;
         if (MacroGroups.Any(group => string.Equals(group.Name, name, StringComparison.OrdinalIgnoreCase)))

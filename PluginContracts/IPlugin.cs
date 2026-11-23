@@ -10,6 +10,8 @@ public sealed record PluginStartupData(string ConfigurationId, string InstanceId
 
 public sealed record PluginTrayMenuItem(string Label, string EventName, bool IsSeparator = false);
 
+public sealed record PluginMacroDescriptor(Guid Id, string Name);
+
 public enum LogLevel
 {
     Debug,
@@ -42,6 +44,10 @@ public interface IPluginHost : IActionContext
     IReadOnlyList<PluginActionData> GetConfiguredActions(string pluginId);
     IReadOnlyList<PluginStartupData> GetPluginStartupConfigurations(string pluginId) => [];
     void SetTrayMenuItems(string pluginId, IReadOnlyList<PluginTrayMenuItem> items) { }
+    IReadOnlyList<PluginMacroDescriptor> GetMacros() =>
+        throw new NotSupportedException("Cet hôte ne permet pas de sélectionner une macro.");
+    Task RunMacroAsync(Guid macroId, CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Cet hôte ne permet pas d'exécuter une macro.");
 }
 
 public interface IPlugin : IAsyncDisposable

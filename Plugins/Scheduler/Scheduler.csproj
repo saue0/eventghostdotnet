@@ -8,5 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\PluginContracts\PluginContracts.csproj" />
     <Compile Include="..\Shared\StartupConfigurationDialog.cs" Link="StartupConfigurationDialog.cs" />
+    <InternalsVisibleTo Include="Scheduler.Tests" />
   </ItemGroup>
 </Project>

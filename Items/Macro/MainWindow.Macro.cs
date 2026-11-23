@@ -157,6 +157,9 @@ public partial class MainWindow
             case MacroDefinition macro:
                 await ExecuteMacroInSessionAsync(macro, _sessionCancellation.Token);
                 break;
+            case MacroEvent macroEvent:
+                await ExecuteMacroInSessionAsync(macroEvent.Macro, _sessionCancellation.Token);
+                break;
             case MacroAction action:
                 var ownerMacro = Macros.FirstOrDefault(macro => macro.Actions.Contains(action)) ??
                                  (StartupActions.Contains(action) ? _startupMacro : null);
@@ -250,7 +253,8 @@ public partial class MainWindow
 
         WriteLog(selectedAction is null
             ? $"Exécution de la macro « {macro.Name} »."
-            : $"Exécution de l'action « {selectedAction.DisplayName} ».");
+            : $"Exécution de l'action « {selectedAction.DisplayName} ».",
+            null, category: selectedAction is null ? LogCategory.Macro : LogCategory.Action);
         var actionIds = selectedAction is null
             ? macro.Actions.Select(action => action.Id).ToArray()
             : new[] { selectedAction.Id };
@@ -264,7 +268,7 @@ public partial class MainWindow
             if (++actionExecutions > MaximumActionExecutionsPerMacro)
             {
                 WriteLog($"Limite de {MaximumActionExecutionsPerMacro} exécutions d'actions atteinte dans « {macro.Name} ».",
-                    LogLevel.Warning);
+                    null, level: LogLevel.Warning, category: LogCategory.Macro);
                 break;
             }
 
@@ -303,6 +307,19 @@ public partial class MainWindow
                         break;
                     case MacroActionKind.ShowMessage:
                         MessageBox.Show(this, action.Value, macro.Name, MessageBoxButton.OK, MessageBoxImage.Information);
+                        break;
+                    case MacroActionKind.AskYesNo:
+                        if (string.IsNullOrWhiteSpace(action.Value))
+                            throw new InvalidOperationException("La question est vide.");
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var answer = MessageBox.Show(this, action.Value,
+                            string.IsNullOrWhiteSpace(action.Target) ? macro.Name : action.Target,
+                            MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        actionContext.Result = answer == MessageBoxResult.Yes ? "Oui" : "Non";
+                        break;
+                    case MacroActionKind.Stop:
+                        nextActionIndex = actionIds.Length;
                         break;
                     case MacroActionKind.OpenUrl:
                         if (!Uri.TryCreate(action.Value, UriKind.Absolute, out var uri) ||
@@ -391,7 +408,8 @@ public partial class MainWindow
         if (!cancellationToken.IsCancellationRequested)
             WriteLog(selectedAction is null
                 ? $"Macro terminée : « {macro.Name} »."
-                : $"Action terminée : « {selectedAction.DisplayName} ».");
+                : $"Action terminée : « {selectedAction.DisplayName} ».",
+                null, category: selectedAction is null ? LogCategory.Macro : LogCategory.Action);
     }
 
     private (string Name, IReadOnlyList<string> EventNames)? PromptForMacroDetails(

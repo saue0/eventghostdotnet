@@ -124,6 +124,8 @@ public partial class MainWindow
             return PromptForFlowAction(kind, existing, sourceMacro);
         if (IsTargetedSystemAction(kind))
             return PromptForSystemAction(kind, existing);
+        if (kind == MacroActionKind.AskYesNo)
+            return PromptForYesNoAction(existing);
 
         var isEditing = existing is not null;
         var value = kind switch
@@ -135,6 +137,7 @@ public partial class MainWindow
             MacroActionKind.OpenUrl => PromptForText(isEditing ? "Modifier l'action d'ouverture d'URL" : "Action d'ouverture d'URL",
                 "URL HTTP ou HTTPS :", existing?.Value ?? "https://"),
             MacroActionKind.Beep => existing?.Value ?? string.Empty,
+            MacroActionKind.Stop => string.Empty,
             _ => null
         };
 
@@ -163,6 +166,54 @@ public partial class MainWindow
             Value = value,
             Target = existing?.Target ?? string.Empty
         };
+    }
+
+    private MacroAction? PromptForYesNoAction(MacroAction? existing)
+    {
+        var dialog = new Window
+        {
+            Title = existing is null ? "Question Oui/Non" : "Modifier la question Oui/Non",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+            Padding = new Thickness(16)
+        };
+        var panel = new StackPanel { Width = 440 };
+        panel.Children.Add(new TextBlock { Text = "Question :", Margin = new Thickness(0, 0, 0, 5) });
+        var question = new TextBox
+        {
+            Text = existing?.Value ?? "Souhaitez-vous continuer ?",
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        panel.Children.Add(question);
+        panel.Children.Add(new TextBlock { Text = "Titre de la fenêtre (facultatif) :", Margin = new Thickness(0, 0, 0, 5) });
+        var title = new TextBox
+        {
+            Text = existing?.Target ?? string.Empty,
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        panel.Children.Add(title);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
+        var save = new Button { Content = "Enregistrer", IsDefault = true };
+        save.Click += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(question.Text))
+            {
+                MessageBox.Show(dialog, "Saisissez une question.", "Question requise",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        buttons.Children.Add(save);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+
+        return dialog.ShowDialog() == true
+            ? new MacroAction { Kind = MacroActionKind.AskYesNo, Value = question.Text, Target = title.Text }
+            : null;
     }
 
     private sealed record LogLevelChoice(LogLevel Level, string Label);
@@ -1221,6 +1272,8 @@ public partial class MainWindow
             new(MacroActionKind.Delay, "Attendre"),
             new(MacroActionKind.Beep, "Signal sonore"),
             new(MacroActionKind.ShowMessage, "Afficher un message"),
+            new(MacroActionKind.AskYesNo, "Question Oui/Non"),
+            new(MacroActionKind.Stop, "Arrêter la macro"),
             new(MacroActionKind.OpenUrl, "Ouvrir une URL"),
             new(MacroActionKind.PowerShell, "Script PowerShell"),
             new(MacroActionKind.EnableMacro, "Activer une macro"),

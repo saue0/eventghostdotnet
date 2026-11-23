@@ -84,6 +84,7 @@ Les actions reçoivent un `IPluginHost` et un jeton d'annulation :
 - `host.Log(message)` ajoute un message de niveau Information au journal. `host.Log(message, LogLevel.Warning)` permet de préciser le niveau (`Debug`, `Information`, `Warning` ou `Error`).
 - `host.Result` transmet une valeur à l'action suivante de la macro.
 - `host.RaiseEvent(name, payload)` émet un événement que les macros peuvent écouter.
+- `host.GetMacros()` retourne les identifiants et noms des macros configurées ; `host.RunMacroAsync(id, cancellationToken)` exécute une macro active par son identifiant et signale une cible absente ou désactivée.
 - `host.Owner` fournit la fenêtre WPF propriétaire d'un formulaire de configuration.
 
 Les actions longues devraient être asynchrones et vérifier `cancellationToken`. Les macros peuvent s'exécuter simultanément : synchronisez tout état partagé par les actions du plugin. En cas d'échec, signalez-le par une exception plutôt que de retourner une réussite factice.
@@ -120,7 +121,7 @@ Plugins\
     DependancesDuPlugin.dll
 ```
 
-Le chargeur recherche les DLL dans les sous-dossiers de `Plugins` au démarrage. Il utilise le fichier `.deps.json` pour résoudre les dépendances du plugin; le contrat `PluginContracts` est fourni par l'application et ne doit pas être copié comme une dépendance distincte. Redémarrez EventGhost .NET pour charger le nouveau plugin. Le journal indique les plugins chargés ou les erreurs de chargement.
+Le chargeur recherche les DLL dans les sous-dossiers de `Plugins` au démarrage. Il utilise le fichier `.deps.json` pour résoudre les dépendances du plugin; le contrat `PluginContracts` est fourni par l'application et ne doit pas être copié comme une dépendance distincte. Placez un fichier `README.md` à côté de la DLL pour le rendre accessible depuis le menu Aide. Redémarrez EventGhost .NET pour charger le nouveau plugin. Le journal indique les plugins chargés ou les erreurs de chargement.
 
 ## 6. Intégrer le plugin au dépôt
 
@@ -129,7 +130,7 @@ Pour qu'un plugin soit construit et publié avec l'application :
 1. Ajoutez son projet à `EventGhostDotNet.csproj` comme les projets des plugins intégrés.
 2. Ajoutez-le à la liste passée à la cible `CopyBuiltInPlugins` pour copier sa DLL et son `.deps.json` dans `bin\...\Plugins\MonPlugin`.
 3. Ajoutez les fichiers correspondants à la cible `PublishBuiltInPlugins`.
-4. Documentez ses fonctionnalités dans `Plugins\MonPlugin\README.md`. Les README de plugins et ce guide sont copiés lors de la publication.
+4. Documentez ses fonctionnalités dans `Plugins\MonPlugin\README.md`. Les README de plugins et ce guide sont copiés lors de la compilation et de la publication.
 
 Les plugins sont chargés avec les droits de l'application. Installez uniquement des DLL de confiance.
 

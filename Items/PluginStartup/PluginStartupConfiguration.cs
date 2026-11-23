@@ -4,15 +4,74 @@ namespace EventGhostDotNet;
 
 public sealed class PluginStartupConfiguration : ConfigurationItem
 {
+    private string _pluginId = string.Empty;
+    private string _configurationId = string.Empty;
+    private string _instanceId = Guid.NewGuid().ToString();
+    private string _value = string.Empty;
+    private string _target = string.Empty;
     private string _displayName = string.Empty;
     private bool _canConfigure;
     private bool _isEnabled = true;
 
-    public string PluginId { get; set; } = string.Empty;
-    public string ConfigurationId { get; set; } = string.Empty;
-    public string InstanceId { get; set; } = Guid.NewGuid().ToString();
-    public string Value { get; set; } = string.Empty;
-    public string Target { get; set; } = string.Empty;
+    public string PluginId
+    {
+        get => _pluginId;
+        set
+        {
+            if (_pluginId == value)
+                return;
+            _pluginId = value;
+            NotifyChanged();
+        }
+    }
+
+    public string ConfigurationId
+    {
+        get => _configurationId;
+        set
+        {
+            if (_configurationId == value)
+                return;
+            _configurationId = value;
+            NotifyChanged();
+        }
+    }
+
+    public string InstanceId
+    {
+        get => _instanceId;
+        set
+        {
+            if (_instanceId == value)
+                return;
+            _instanceId = value;
+            NotifyChanged();
+        }
+    }
+
+    public string Value
+    {
+        get => _value;
+        set
+        {
+            if (_value == value)
+                return;
+            _value = value;
+            NotifyChanged();
+        }
+    }
+
+    public string Target
+    {
+        get => _target;
+        set
+        {
+            if (_target == value)
+                return;
+            _target = value;
+            NotifyChanged();
+        }
+    }
 
     public bool IsEnabled
     {

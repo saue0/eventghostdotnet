@@ -72,6 +72,7 @@ public partial class MainWindow
                     return;
                 if (!macro.IsEnabled)
                     continue;
+                ExpandMacroForEvent(macro);
                 await ExecuteMacroInSessionAsync(macro, cancellationToken,
                     triggerEvent: new TriggerEvent(eventName, payload, sourceId));
             }

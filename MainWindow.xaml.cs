@@ -58,9 +58,26 @@ public partial class MainWindow : Window
         public string Source => PluginId ?? "Système";
     }
 
-    private sealed class EventLogEntry
+    private enum LogCategory
     {
-        public EventLogEntry(string timestamp, string message, string? eventName, AnsiLogFormatter formatter, LogLevel level)
+        General,
+        Macro,
+        Action
+    }
+
+    private sealed class EventLogEntry : INotifyPropertyChanged
+    {
+        private readonly DateTime _timestamp;
+        private readonly string _message;
+        private readonly string _symbol;
+        private readonly string _label;
+        private readonly AnsiLogFormatter _formatter;
+        private readonly LogCategory _category;
+        private TextBlock _display = new();
+        private string _text = string.Empty;
+
+        public EventLogEntry(DateTime timestamp, string message, string? eventName, AnsiLogFormatter formatter,
+            LogLevel level, LogCategory category)
         {
             var (symbol, label, color) = level switch
             {
@@ -70,29 +87,55 @@ public partial class MainWindow : Window
                 LogLevel.Error => ("✖", "ERREUR", Brushes.Salmon),
                 _ => throw new ArgumentOutOfRangeException(nameof(level), level, "Niveau de journal invalide.")
             };
-            var prefix = $"{symbol} [{label}] [{timestamp}] ";
+            _symbol = symbol;
+            _label = label;
+            _timestamp = timestamp;
+            _message = message;
+            _formatter = formatter;
+            _category = category;
+            LevelColor = color;
             EventName = eventName;
             Level = level;
-            Display = new TextBlock { Foreground = color };
-            Display.Inlines.Add(new Run(prefix));
+            RefreshDisplay(showTime: true, dateStamp: false, indent: false);
+        }
+
+        public string? EventName { get; }
+        public LogLevel Level { get; }
+        public LogCategory Category => _category;
+        private System.Windows.Media.Brush LevelColor { get; }
+        public TextBlock Display => _display;
+        public string Text => _text;
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public void RefreshDisplay(bool showTime, bool dateStamp, bool indent)
+        {
+            var prefix = $"{_symbol} [{_label}] ";
+            if (dateStamp)
+                prefix += $"[{_timestamp.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}] ";
+            if (showTime)
+                prefix += $"[{_timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}] ";
+            if (indent && _category == LogCategory.Action)
+                prefix = "  " + prefix;
+
+            var display = new TextBlock { Foreground = LevelColor };
+            display.Inlines.Add(new Run(prefix));
             var text = new System.Text.StringBuilder(prefix);
-            foreach (var segment in formatter.Parse(message))
+            foreach (var segment in _formatter.Parse(_message))
             {
                 var run = new Run(segment.Text);
                 if (segment.Foreground is { } foreground)
                     run.Foreground = new SolidColorBrush(foreground);
                 if (segment.Background is { } background)
                     run.Background = new SolidColorBrush(background);
-                Display.Inlines.Add(run);
+                display.Inlines.Add(run);
                 text.Append(segment.Text);
             }
-            Text = text.ToString();
+            _display = display;
+            _text = text.ToString();
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Display)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Text)));
         }
 
-        public string? EventName { get; }
-        public LogLevel Level { get; }
-        public TextBlock Display { get; }
-        public string Text { get; }
         public override string ToString() => Text;
     }
 
@@ -145,7 +188,8 @@ public partial class MainWindow : Window
         {
             if (!Enum.IsDefined(level))
                 throw new InvalidOperationException($"Niveau de journal invalide : {level}.");
-            window.Dispatcher.BeginInvoke(new Action(() => window.WriteLog(message, null, _logFormatter, level)));
+            window.Dispatcher.BeginInvoke(new Action(() =>
+                window.WriteLog(message, null, _logFormatter, level, LogCategory.Action)));
         }
 
         public void RaiseEvent(string name, string? payload) => RaiseEventFromSource(name, payload, null);
@@ -174,6 +218,20 @@ public partial class MainWindow : Window
                 .Select(ToPluginStartupData).ToArray();
         public void SetTrayMenuItems(string pluginId, IReadOnlyList<PluginTrayMenuItem> items) =>
             window.SetPluginTrayMenuItems(pluginId, items);
+        public IReadOnlyList<PluginMacroDescriptor> GetMacros() =>
+            window.Macros.Select(macro => new PluginMacroDescriptor(macro.Id, macro.Name)).ToArray();
+        public async Task RunMacroAsync(Guid macroId, CancellationToken cancellationToken)
+        {
+            await window.Dispatcher.InvokeAsync(async () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var macro = window.Macros.FirstOrDefault(item => item.Id == macroId)
+                    ?? throw new InvalidOperationException($"Macro introuvable : {macroId}.");
+                if (!macro.IsEnabled)
+                    throw new InvalidOperationException($"La macro « {macro.Name} » est désactivée.");
+                await window.ExecuteMacroInSessionAsync(macro, cancellationToken);
+            }).Task.Unwrap();
+        }
         public void Log(string message) => context.Log(message);
         public void Log(string message, LogLevel level) => context.Log(message, level);
         public void RaiseEvent(string name, string? payload) => context.RaiseEventFromSource(name, payload, sourceId);
@@ -222,14 +280,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _logView = CollectionViewSource.GetDefaultView(_logEntries);
-        _logView.Filter = item => item is EventLogEntry entry && entry.Level switch
-        {
-            LogLevel.Debug => LogDebugFilter.IsChecked == true,
-            LogLevel.Information => LogInformationFilter.IsChecked == true,
-            LogLevel.Warning => LogWarningFilter.IsChecked == true,
-            LogLevel.Error => LogErrorFilter.IsChecked == true,
-            _ => false
-        };
+        _logView.Filter = item => item is EventLogEntry entry && ShouldShowLogEntry(entry);
         LogList.ItemsSource = _logView;
         ConfigurationPathText.Text = _configurationPath;
         _startupSection = new StartupSection();
@@ -245,6 +296,7 @@ public partial class MainWindow : Window
             ShowInTaskbar = false;
         }
         _cleanConfiguration = SerializeConfiguration();
+        InitializeMenuState();
         _exitRequest = new EventWaitHandle(false, EventResetMode.AutoReset,
             $@"Local\EventGhostDotNet.Exit.{Environment.ProcessId}", out var createdNew);
         if (!createdNew)
@@ -658,6 +710,7 @@ public partial class MainWindow : Window
             MacroEvent macroEvent => macroEvent.Macro,
             _ => null
         };
+        UpdateMenuSelectionState();
     }
 
     private void ConfigurationTree_ContextMenuOpening(object sender, ContextMenuEventArgs e)
@@ -872,6 +925,7 @@ public partial class MainWindow : Window
                 macro.IsExpanded = true;
                 break;
         }
+        SynchronizeHistoryViewBaseline();
     }
 
     private void TreeItem_Collapsed(object sender, RoutedEventArgs e)
@@ -890,6 +944,7 @@ public partial class MainWindow : Window
                 macro.IsExpanded = false;
                 break;
         }
+        SynchronizeHistoryViewBaseline();
     }
 
     private void TreeItem_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -1003,6 +1058,11 @@ public partial class MainWindow : Window
             RefreshPluginStartupDescriptions();
             RefreshPluginDescriptions(Macros);
             RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
+            RefreshHistorySubscriptions();
+            _undoConfiguration.Clear();
+            _redoConfiguration.Clear();
+            _lastHistorySnapshot = SerializeConfiguration();
+            UpdateMenuSelectionState();
             _cleanConfiguration = SerializeConfiguration();
             SelectStartupSection();
 
@@ -1188,7 +1248,11 @@ public partial class MainWindow : Window
             return initialConfiguration;
         }
 
-        var json = File.ReadAllText(_configurationPath);
+        return ReadConfiguration(File.ReadAllText(_configurationPath));
+    }
+
+    private ConfigurationDocument ReadConfiguration(string json)
+    {
         using var document = JsonDocument.Parse(json);
         var configuration = document.RootElement.ValueKind switch
         {
@@ -1218,7 +1282,8 @@ public partial class MainWindow : Window
                      .Concat(configuration.StartupActions))
         {
             if (action.Kind is not (MacroActionKind.Log or MacroActionKind.Delay or MacroActionKind.Beep or
-                MacroActionKind.ShowMessage or MacroActionKind.OpenUrl or MacroActionKind.PowerShell or MacroActionKind.Plugin or
+                MacroActionKind.ShowMessage or MacroActionKind.AskYesNo or MacroActionKind.Stop or
+                MacroActionKind.OpenUrl or MacroActionKind.PowerShell or MacroActionKind.Plugin or
                 MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or MacroActionKind.EnableAction or MacroActionKind.DisableAction or
                 MacroActionKind.Jump or MacroActionKind.If or MacroActionKind.RaiseEvent))
             {
@@ -1501,7 +1566,9 @@ public partial class MainWindow : Window
     private void CopyLog_CanExecute(object sender, CanExecuteRoutedEventArgs e) =>
         e.CanExecute = LogList.SelectedItems.Count > 0;
 
-    private void CopyLog_Executed(object sender, ExecutedRoutedEventArgs e)
+    private void CopyLog_Executed(object sender, ExecutedRoutedEventArgs e) => CopySelectedLogEntries();
+
+    private void CopySelectedLogEntries()
     {
         var lines = LogList.SelectedItems.Cast<object>()
             .OrderBy(item => LogList.Items.IndexOf(item))
@@ -1524,6 +1591,8 @@ public partial class MainWindow : Window
         if (_logView is null)
             return;
 
+        if (ReferenceEquals(sender, LogDebugFilter))
+            ShowDebugLogMenuItem.IsChecked = LogDebugFilter.IsChecked == true;
         _logView.Refresh();
         ScrollLogToEnd();
     }
@@ -1557,10 +1626,14 @@ public partial class MainWindow : Window
     }
 
     private void WriteLog(
-        string message, string? eventName, AnsiLogFormatter? formatter = null, LogLevel level = LogLevel.Information)
+        string message, string? eventName, AnsiLogFormatter? formatter = null, LogLevel level = LogLevel.Information,
+        LogCategory category = LogCategory.General)
     {
-        var timestamp = DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-        _logEntries.Add(new EventLogEntry(timestamp, message, eventName, formatter ?? new AnsiLogFormatter(), level));
+        var entry = new EventLogEntry(DateTime.Now, message, eventName, formatter ?? new AnsiLogFormatter(),
+            level, category);
+        entry.RefreshDisplay(ShowLogTimeMenuItem.IsChecked == true,
+            DateStampLogMenuItem.IsChecked == true, IndentLogMenuItem.IsChecked == true);
+        _logEntries.Add(entry);
         while (_logEntries.Count > 500)
             _logEntries.RemoveAt(0);
         ScrollLogToEnd();
