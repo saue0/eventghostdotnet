@@ -195,6 +195,9 @@ public partial class MainWindow
         var target = item.DataContext;
         var inside = (_treeDragSource, target) switch
         {
+            (MacroGroup, MacroGroup) => point.Y >= header.ActualHeight * 0.25 &&
+                                        point.Y <= header.ActualHeight * 0.75,
+            (MacroGroup, ConfigurationRoot) => true,
             (MacroDefinition, MacroGroup) => true,
             (MacroEvent, MacroDefinition) => true,
             (EventLogEntry, MacroDefinition) => true,
@@ -217,9 +220,23 @@ public partial class MainWindow
 
         switch (source)
         {
-            case MacroGroup group when MacroGroups.Contains(group) &&
-                                       target is MacroGroup targetGroup && MacroGroups.Contains(targetGroup) &&
-                                       position != TreeDropPosition.Inside:
+            case MacroGroup group when MacroGroups.Contains(group):
+                var newParent = target switch
+                {
+                    ConfigurationRoot root when ReferenceEquals(root, _configurationRoot) &&
+                                                position == TreeDropPosition.Inside => null,
+                    MacroGroup targetGroup when MacroGroups.Contains(targetGroup) =>
+                        position == TreeDropPosition.Inside ? targetGroup : targetGroup.Parent as MacroGroup,
+                    _ => group
+                };
+                for (var ancestor = newParent; ancestor is not null; ancestor = ancestor.Parent as MacroGroup)
+                {
+                    if (ReferenceEquals(ancestor, group))
+                    {
+                        reason = "Un groupe ne peut pas être déplacé dans lui-même ou dans un de ses sous-groupes.";
+                        return false;
+                    }
+                }
                 break;
             case MacroDefinition macro when FindMacroGroup(macro) is MacroGroup sourceGroup &&
                                             sourceGroup.Macros.Contains(macro):
@@ -314,7 +331,9 @@ public partial class MainWindow
             reason = "L'action Jump doit conserver sa cible dans la même macro.";
             return false;
         }
-        if (ReferenceEquals(destination, _startupMacro) && GetActionReferences(source, action).Any())
+        if (ReferenceEquals(destination, _startupMacro) &&
+            GetActionReferences(source, action).Any(item =>
+                item.Kind is MacroActionKind.EnableAction or MacroActionKind.DisableAction))
         {
             reason = "Une action système cible cette action ; elle ne peut pas être déplacée dans Démarrage.";
             return false;
@@ -325,8 +344,12 @@ public partial class MainWindow
 
     private IEnumerable<MacroAction> GetActionReferences(MacroDefinition owner, MacroAction action) =>
         Macros.SelectMany(macro => macro.Actions).Concat(StartupActions)
-            .Where(item => item.Kind is MacroActionKind.EnableAction or MacroActionKind.DisableAction &&
-                           Guid.TryParse(item.Target, out var macroId) && macroId == owner.Id &&
+            .Where(item => (item.Kind is MacroActionKind.EnableAction or MacroActionKind.DisableAction ||
+                            item.Kind is MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem &&
+                            item.ActivationTarget == ActivationTargetKind.Action) &&
+                           (ReferenceEquals(owner, _startupMacro)
+                               ? string.Equals(item.Target, "Startup", StringComparison.OrdinalIgnoreCase)
+                               : Guid.TryParse(item.Target, out var macroId) && macroId == owner.Id) &&
                            Guid.TryParse(item.Value, out var actionId) && actionId == action.Id);
 
     private void ExecuteTreeDrop(TreeDropPlan plan)
@@ -339,13 +362,23 @@ public partial class MainWindow
                 SelectTreeItem(destinationMacro, destinationMacro.EventItems[^1]);
                 break;
             case MacroGroup group:
-                var targetGroup = (MacroGroup)plan.Target;
-                if (!MoveTreeItem(MacroGroups, MacroGroups, group,
-                        DropIndex(MacroGroups.IndexOf(targetGroup), plan.Position)))
+                var sourceGroups = GetGroupSiblings(group);
+                var destinationGroups = plan.Target switch
+                {
+                    ConfigurationRoot => _configurationRoot.Groups,
+                    MacroGroup destination when plan.Position == TreeDropPosition.Inside => destination.Groups,
+                    MacroGroup sibling => GetGroupSiblings(sibling),
+                    _ => throw new InvalidOperationException("Destination de groupe invalide.")
+                };
+                var groupIndex = plan.Target is MacroGroup siblingGroup && plan.Position != TreeDropPosition.Inside
+                    ? DropIndex(destinationGroups.IndexOf(siblingGroup), plan.Position)
+                    : destinationGroups.Count;
+                if (!MoveTreeItem(sourceGroups, destinationGroups, group, groupIndex))
                     return;
+                SynchronizeGroupOrder();
                 SynchronizeMacroOrder();
                 SelectMacroGroup(group);
-                WriteLog($"Groupe « {group.Name} » déplacé à la position {MacroGroups.IndexOf(group) + 1}.");
+                WriteLog($"Groupe « {group.Name} » déplacé à la position {destinationGroups.IndexOf(group) + 1}.");
                 break;
             case MacroDefinition macro:
                 var sourceGroup = FindMacroGroup(macro)!;
@@ -375,13 +408,19 @@ public partial class MainWindow
                     ? DropIndex(eventDestination.EventItems.IndexOf(siblingEvent), plan.Position)
                     : eventDestination.EventNames.Count;
                 var wasEnabled = macroEvent.IsEnabled;
+                var eventReferences = GetEventReferences(macroEvent).ToArray();
                 if (!MoveTreeItem(eventSource.EventNames, eventDestination.EventNames, macroEvent.Name, eventIndex))
                     return;
                 var movedEvent = ReferenceEquals(eventSource, eventDestination)
                     ? macroEvent
                     : eventDestination.EventItems[eventIndex];
                 if (!ReferenceEquals(eventSource, eventDestination))
+                {
                     movedEvent.IsEnabled = wasEnabled;
+                    foreach (var reference in eventReferences)
+                        reference.Target = eventDestination.Id.ToString();
+                }
+                RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
                 SelectTreeItem(eventDestination, movedEvent);
                 WriteLog($"Événement « {macroEvent.Name} » déplacé dans « {eventDestination.Name} ».");
                 break;
@@ -396,7 +435,8 @@ public partial class MainWindow
                     return;
                 if (!ReferenceEquals(actionSource, actionDestination))
                     foreach (var reference in references)
-                        reference.Target = actionDestination.Id.ToString();
+                        reference.Target = ReferenceEquals(actionDestination, _startupMacro)
+                            ? "Startup" : actionDestination.Id.ToString();
                 RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
                 if (ReferenceEquals(actionDestination, _startupMacro))
                     SelectStartupActionItem(action);

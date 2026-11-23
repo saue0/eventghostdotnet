@@ -66,15 +66,10 @@ public partial class MainWindow
         PluginStartups.Add(configuration);
         RefreshPluginStartupDescriptions();
         RefreshPluginDescriptions(Macros);
+        RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
         SelectPluginStartupItem(configuration);
         WriteLog($"Démarrage ajouté : {configuration.DisplayName}.");
         await RestartConfiguredPluginsAsync();
-    }
-
-    internal async void PluginStartupEnabled_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: PluginStartupConfiguration configuration })
-            await ApplyPluginStartupStateAsync(configuration);
     }
 
     private async void TogglePluginStartup_Click(object sender, RoutedEventArgs e)
@@ -116,6 +111,7 @@ public partial class MainWindow
         configuration.Target = updated.Target;
         RefreshPluginStartupDescriptions();
         RefreshPluginDescriptions(Macros);
+        RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
         WriteLog($"Démarrage modifié : {configuration.DisplayName}.");
         await RestartConfiguredPluginsAsync();
     }
@@ -149,6 +145,7 @@ public partial class MainWindow
 
         PluginStartups.Remove(configuration);
         RefreshPluginDescriptions(Macros);
+        RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
         WriteLog($"Démarrage supprimé : {configuration.DisplayName}.");
         await RestartConfiguredPluginsAsync();
     }
@@ -232,8 +229,7 @@ public partial class MainWindow
 
     private void SelectPluginStartupItem(PluginStartupConfiguration configuration)
     {
-        ConfigurationTree.UpdateLayout();
-        if (ConfigurationTree.ItemContainerGenerator.ContainerFromItem(_startupSection) is not TreeViewItem parent)
+        if (RevealTreeItem(_startupSection) is not TreeViewItem parent)
             return;
         parent.IsExpanded = true;
         parent.UpdateLayout();

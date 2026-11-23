@@ -175,8 +175,7 @@ public partial class MainWindow
         if (group is null)
             return;
         group.IsExpanded = true;
-        ConfigurationTree.UpdateLayout();
-        if (ConfigurationTree.ItemContainerGenerator.ContainerFromItem(group) is not TreeViewItem groupItem)
+        if (RevealTreeItem(group) is not TreeViewItem groupItem)
             return;
 
         groupItem.IsExpanded = true;
@@ -219,12 +218,13 @@ public partial class MainWindow
 
     private async Task ExecuteMacroInSessionAsync(
         MacroDefinition macro, CancellationToken cancellationToken, Guid? onlyActionId = null,
-        TriggerEvent? triggerEvent = null)
+        TriggerEvent? triggerEvent = null, int logIndentLevel = 0, CancellationToken? actionContextToken = null)
     {
         if (cancellationToken.IsCancellationRequested)
             return;
 
-        var execution = ExecuteMacroAsync(macro, cancellationToken, onlyActionId: onlyActionId, triggerEvent: triggerEvent);
+        var execution = ExecuteMacroAsync(macro, cancellationToken, onlyActionId: onlyActionId,
+            triggerEvent: triggerEvent, logIndentLevel: logIndentLevel, actionContextToken: actionContextToken);
         _activeMacroExecutions.Add(execution);
         try
         {
@@ -238,7 +238,7 @@ public partial class MainWindow
 
     private async Task ExecuteMacroAsync(
         MacroDefinition macro, CancellationToken cancellationToken, int callDepth = 0, Guid? onlyActionId = null,
-        TriggerEvent? triggerEvent = null)
+        TriggerEvent? triggerEvent = null, int logIndentLevel = 0, CancellationToken? actionContextToken = null)
     {
         if (cancellationToken.IsCancellationRequested)
             return;
@@ -251,10 +251,13 @@ public partial class MainWindow
         if (onlyActionId is not null && selectedAction is null)
             throw new InvalidOperationException("L'action sélectionnée n'appartient plus à la macro.");
 
+        var actionLogIndentLevel = NextLogIndentLevel(logIndentLevel);
+        var entryIndentLevel = selectedAction is null ? logIndentLevel : actionLogIndentLevel;
         WriteLog(selectedAction is null
             ? $"Exécution de la macro « {macro.Name} »."
             : $"Exécution de l'action « {selectedAction.DisplayName} ».",
-            null, category: selectedAction is null ? LogCategory.Macro : LogCategory.Action);
+            null, category: selectedAction is null ? LogCategory.Macro : LogCategory.Action,
+            indentLevel: entryIndentLevel);
         var actionIds = selectedAction is null
             ? macro.Actions.Select(action => action.Id).ToArray()
             : new[] { selectedAction.Id };
@@ -268,7 +271,7 @@ public partial class MainWindow
             if (++actionExecutions > MaximumActionExecutionsPerMacro)
             {
                 WriteLog($"Limite de {MaximumActionExecutionsPerMacro} exécutions d'actions atteinte dans « {macro.Name} ».",
-                    null, level: LogLevel.Warning, category: LogCategory.Macro);
+                    null, level: LogLevel.Warning, category: LogCategory.Macro, indentLevel: logIndentLevel);
                 break;
             }
 
@@ -285,11 +288,12 @@ public partial class MainWindow
             var stopAfterJump = false;
             var actionContext = new ActionContext(
                 this,
-                cancellationToken,
+                actionContextToken ?? cancellationToken,
                 action.Kind == MacroActionKind.If
                     ? previousActionResult
                     : action.Value.Length == 0 ? null : action.Value,
-                triggerEvent);
+                triggerEvent,
+                actionLogIndentLevel);
             try
             {
                 switch (action.Kind)
@@ -348,9 +352,18 @@ public partial class MainWindow
                     case MacroActionKind.DisableMacro:
                     case MacroActionKind.EnableAction:
                     case MacroActionKind.DisableAction:
-                        var result = ExecuteSystemAction(Macros, action);
+                    case MacroActionKind.ActivateItem:
+                    case MacroActionKind.DeactivateItem:
+                        var result = ExecuteSystemAction(MacroGroups, Macros, StartupActions, PluginStartups, action);
                         _cleanConfiguration = AcceptRuntimeStateChange(_cleanConfiguration, result);
                         actionContext.Log(result.Message);
+                        if (result.Kind == ActivationTargetKind.PluginStartup &&
+                            result.PreviousState != result.CurrentState)
+                        {
+                            _sessionCancellation.Cancel();
+                            _ = Dispatcher.BeginInvoke(new Action(() => _ = RestartConfiguredPluginsAsync()));
+                            nextActionIndex = actionIds.Length;
+                        }
                         break;
                     case MacroActionKind.Jump:
                         switch (action.JumpMode)
@@ -359,7 +372,9 @@ public partial class MainWindow
                             case JumpMode.CallAndResume:
                                 var targetMacro = FindSystemTargetMacro(Macros, action);
                                 stopAfterJump = action.JumpMode == JumpMode.CallAndStop;
-                                await ExecuteMacroAsync(targetMacro, cancellationToken, callDepth + 1, triggerEvent: triggerEvent);
+                                await ExecuteMacroAsync(targetMacro, cancellationToken, callDepth + 1,
+                                    triggerEvent: triggerEvent, logIndentLevel: actionLogIndentLevel,
+                                    actionContextToken: actionContextToken);
                                 if (stopAfterJump)
                                     nextActionIndex = actionIds.Length;
                                 break;
@@ -409,7 +424,8 @@ public partial class MainWindow
             WriteLog(selectedAction is null
                 ? $"Macro terminée : « {macro.Name} »."
                 : $"Action terminée : « {selectedAction.DisplayName} ».",
-                null, category: selectedAction is null ? LogCategory.Macro : LogCategory.Action);
+                null, category: selectedAction is null ? LogCategory.Macro : LogCategory.Action,
+                indentLevel: entryIndentLevel);
     }
 
     private (string Name, IReadOnlyList<string> EventNames)? PromptForMacroDetails(

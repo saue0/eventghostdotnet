@@ -39,20 +39,44 @@
                     </Trigger>
                 </Style.Triggers>
             </Style>
-            <Style x:Key="ItemIconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
-                <Setter Property="Width" Value="28"/>
-                <Setter Property="Height" Value="28"/>
-                <Setter Property="MinHeight" Value="0"/>
-                <Setter Property="Padding" Value="0"/>
-                <Setter Property="Margin" Value="2"/>
+            <Style x:Key="ConfigurationItemIcon" TargetType="ContentControl">
+                <Setter Property="Width" Value="20"/>
+                <Setter Property="Height" Value="20"/>
+                <Setter Property="Margin" Value="0,0,6,0"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ContentControl">
+                            <Grid>
+                                <TextBlock Text="{TemplateBinding Tag}" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                                           Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+                                <Border x:Name="DisabledOverlay" Width="12" Height="12" CornerRadius="6"
+                                        Background="White" BorderBrush="#D92D20" BorderThickness="1"
+                                        HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                        Visibility="Collapsed">
+                                    <TextBlock Text="×" FontFamily="Segoe UI" FontSize="10" FontWeight="Bold"
+                                               Foreground="#D92D20" HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
+                                </Border>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="DisabledOverlay" Property="Visibility" Value="Visible"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
-            <Style x:Key="EditActionIconButton" TargetType="Button" BasedOn="{StaticResource ItemIconButton}">
-                <Setter Property="ToolTip" Value="Modifier l'action"/>
+            <Style x:Key="ActionItemIcon" TargetType="ContentControl" BasedOn="{StaticResource ConfigurationItemIcon}">
+                <Setter Property="Tag" Value="&#xE768;"/>
                 <Style.Triggers>
-                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static local:MacroActionKind.Beep}">
-                        <Setter Property="IsEnabled" Value="False"/>
-                        <Setter Property="ToolTip" Value="Cette action n'a pas de paramètres à modifier."/>
+                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static local:MacroActionKind.PowerShell}">
+                        <Setter Property="Tag" Value="&#xE756;"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static local:MacroActionKind.Plugin}">
+                        <Setter Property="Tag" Value="&#xE90F;"/>
                     </DataTrigger>
                 </Style.Triggers>
             </Style>
@@ -65,26 +89,101 @@
                 </Style.Resources>
                 <Setter Property="IsExpanded" Value="True"/>
                 <Setter Property="Padding" Value="4,3"/>
-                <Setter Property="Margin" Value="1"/>
+                <Setter Property="Margin" Value="0"/>
                 <Setter Property="Background" Value="Transparent"/>
                 <EventSetter Event="MouseDoubleClick" Handler="TreeItem_MouseDoubleClick"/>
                 <EventSetter Event="Loaded" Handler="TreeItem_Loaded"/>
                 <EventSetter Event="Expanded" Handler="TreeItem_Expanded"/>
                 <EventSetter Event="Collapsed" Handler="TreeItem_Collapsed"/>
-                <Style.Triggers>
-                    <Trigger Property="IsMouseOver" Value="True">
-                        <Setter Property="Background" Value="#F0F4F8"/>
-                    </Trigger>
-                    <Trigger Property="IsSelected" Value="True">
-                        <Setter Property="Background" Value="#D7E8F7"/>
-                        <Setter Property="Foreground" Value="#1F1F1F"/>
-                    </Trigger>
-                </Style.Triggers>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TreeViewItem">
+                            <Grid SnapsToDevicePixels="True">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="18"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <local:TreeViewConnector Grid.Column="0" Grid.RowSpan="2" Width="27"
+                                                         HorizontalAlignment="Left" Margin="-9,0,0,0"
+                                                         HeaderHeight="{Binding ActualHeight, ElementName=HeaderBorder}"
+                                                         IsLastSibling="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=(local:MainWindow.IsLastSibling)}"
+                                                         IsRoot="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=(local:MainWindow.IsTreeRoot)}"
+                                                         HasChildren="{Binding HasItems, RelativeSource={RelativeSource TemplatedParent}}"
+                                                         IsExpanded="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
+                                                         SnapsToDevicePixels="True"/>
+                                <ToggleButton x:Name="Expander" Grid.Column="0" Width="14" Height="14"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Background="White" BorderThickness="0" Padding="0" Focusable="False"
+                                              IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <Border x:Name="ToggleBorder" Width="9" Height="9" Background="White"
+                                                    BorderBrush="#707070" BorderThickness="1" SnapsToDevicePixels="True">
+                                                <Grid>
+                                                    <TextBlock x:Name="Plus" Text="+" FontFamily="Segoe UI"
+                                                               FontSize="8" Foreground="#303030"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="Minus" Text="-" FontFamily="Segoe UI"
+                                                               FontSize="8" Foreground="#303030"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Visibility="Collapsed"/>
+                                                </Grid>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsChecked" Value="True">
+                                                    <Setter TargetName="Plus" Property="Visibility" Value="Collapsed"/>
+                                                    <Setter TargetName="Minus" Property="Visibility" Value="Visible"/>
+                                                </Trigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ToggleBorder" Property="Background" Value="#F0F4F8"/>
+                                                    <Setter TargetName="ToggleBorder" Property="BorderBrush" Value="#404040"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                </ToggleButton>
+                                <Border x:Name="HeaderBorder" Grid.Column="1" Background="{TemplateBinding Background}"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter x:Name="PART_Header" ContentSource="Header"
+                                                      HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                                </Border>
+                                <ItemsPresenter x:Name="ItemsHost" Grid.Row="1" Grid.Column="1"/>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="HasItems" Value="False">
+                                    <Setter TargetName="Expander" Property="Visibility" Value="Collapsed"/>
+                                </Trigger>
+                                <Trigger Property="IsExpanded" Value="False">
+                                    <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="HeaderBorder" Property="Background" Value="#F0F4F8"/>
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="HeaderBorder" Property="Background" Value="#D7E8F7"/>
+                                    <Setter Property="Foreground" Value="#1F1F1F"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
             <DataTemplate x:Key="ActionChoiceGroupHeaderTemplate">
                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="#466586"
                            Margin="0,5,0,2"/>
             </DataTemplate>
+            <HierarchicalDataTemplate DataType="{x:Type local:ConfigurationRoot}" ItemsSource="{Binding Children}">
+                <StackPanel Orientation="Horizontal">
+                    <ContentControl Style="{StaticResource ConfigurationItemIcon}" Tag="&#xE770;"
+                                    Foreground="#466586" AutomationProperties.Name="Configuration"/>
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </StackPanel>
+            </HierarchicalDataTemplate>
         </ResourceDictionary>
     </Window.Resources>
 

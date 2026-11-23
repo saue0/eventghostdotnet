@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Collections.ObjectModel;
 using MessageBox = System.Windows.MessageBox;
 
 namespace EventGhostDotNet;
@@ -19,6 +20,55 @@ public partial class MainWindow
     private MacroGroup? FindMacroGroup(MacroDefinition? macro) =>
         macro is null ? null : MacroGroups.FirstOrDefault(group => group.Id == macro.GroupId);
 
+    private ObservableCollection<MacroGroup> GetGroupSiblings(MacroGroup group) =>
+        group.Parent is MacroGroup parent ? parent.Groups : _configurationRoot.Groups;
+
+    private void SynchronizeGroupOrder()
+    {
+        static IEnumerable<MacroGroup> Walk(IEnumerable<MacroGroup> groups)
+        {
+            foreach (var group in groups)
+            {
+                yield return group;
+                foreach (var child in Walk(group.Groups))
+                    yield return child;
+            }
+        }
+
+        var ordered = Walk(_configurationRoot.Groups).ToArray();
+        for (var index = 0; index < ordered.Length; index++)
+        {
+            var oldIndex = MacroGroups.IndexOf(ordered[index]);
+            if (oldIndex < 0)
+                MacroGroups.Insert(index, ordered[index]);
+            else if (oldIndex != index)
+                MacroGroups.Move(oldIndex, index);
+        }
+    }
+
+    private TreeViewItem? RevealTreeItem(ConfigurationItem target)
+    {
+        var path = new Stack<ConfigurationItem>();
+        for (ConfigurationItem? current = target; current is not null; current = current.Parent)
+            path.Push(current);
+        ItemsControl parent = ConfigurationTree;
+        TreeViewItem? item = null;
+        while (path.TryPop(out var part))
+        {
+            parent.UpdateLayout();
+            item = parent.ItemContainerGenerator.ContainerFromItem(part) as TreeViewItem;
+            if (item is null)
+                return null;
+            if (path.Count > 0)
+            {
+                item.IsExpanded = true;
+                item.UpdateLayout();
+            }
+            parent = item;
+        }
+        return item;
+    }
+
     private void AddMacroGroup_Click(object sender, RoutedEventArgs e)
     {
         AddMacroGroup("Ajouter un groupe", "Nouveau groupe");
@@ -37,7 +87,9 @@ public partial class MainWindow
         }
 
         var group = new MacroGroup { Name = name };
-        MacroGroups.Add(group);
+        var parent = GetSelectedMacroGroup();
+        (parent?.Groups ?? _configurationRoot.Groups).Add(group);
+        SynchronizeGroupOrder();
         SelectMacroGroup(group);
         WriteLog($"Groupe créé : {group.Name}.");
     }
@@ -65,6 +117,7 @@ public partial class MainWindow
         }
 
         group.Name = name;
+        RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
         WriteLog($"Groupe renommé : {group.Name}.");
     }
 
@@ -79,9 +132,9 @@ public partial class MainWindow
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        if (group.Macros.Count > 0)
+        if (group.Macros.Count > 0 || group.Groups.Count > 0)
         {
-            MessageBox.Show(this, "Déplacez ou supprimez les macros de ce groupe avant de le supprimer.",
+            MessageBox.Show(this, "Déplacez ou supprimez les macros et sous-groupes avant de supprimer ce groupe.",
                 "Groupe non vide", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -89,7 +142,9 @@ public partial class MainWindow
                 MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes)
             return;
 
+        GetGroupSiblings(group).Remove(group);
         MacroGroups.Remove(group);
+        RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
         SelectMacroGroup(MacroGroups[0]);
         WriteLog($"Groupe supprimé : {group.Name}.");
     }
@@ -97,8 +152,7 @@ public partial class MainWindow
     private void SelectMacroGroup(MacroGroup group)
     {
         group.IsExpanded = true;
-        ConfigurationTree.UpdateLayout();
-        if (ConfigurationTree.ItemContainerGenerator.ContainerFromItem(group) is not TreeViewItem item)
+        if (RevealTreeItem(group) is not TreeViewItem item)
             return;
         item.IsExpanded = true;
         item.IsSelected = true;

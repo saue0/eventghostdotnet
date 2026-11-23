@@ -4,11 +4,9 @@
                     xmlns:local="clr-namespace:EventGhostDotNet">
     <HierarchicalDataTemplate DataType="{x:Type local:StartupSection}" ItemsSource="{Binding Children}">
         <StackPanel Orientation="Horizontal">
-            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0"/>
-            <Button Content="Ajouter un plugin" Click="AddPluginStartup_Click"
-                    ToolTip="Ajouter une configuration de démarrage de plugin"/>
-            <Button Content="Ajouter une action" Click="AddStartupAction_Click"
-                    ToolTip="Ajouter une action exécutée au démarrage"/>
+            <ContentControl Style="{DynamicResource ConfigurationItemIcon}" Tag="&#xE80F;"
+                            Foreground="#466586" AutomationProperties.Name="Démarrage"/>
+            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </StackPanel>
     </HierarchicalDataTemplate>
 </ResourceDictionary>

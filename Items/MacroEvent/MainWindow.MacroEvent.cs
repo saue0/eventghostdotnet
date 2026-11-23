@@ -24,7 +24,8 @@ public partial class MainWindow
         string eventName,
         string? payload,
         CancellationToken? sessionToken = null,
-        string? sourceId = null)
+        string? sourceId = null,
+        int logIndentLevel = 0)
     {
         var cancellationToken = sessionToken ?? _sessionCancellation.Token;
         if (cancellationToken.IsCancellationRequested)
@@ -62,19 +63,21 @@ public partial class MainWindow
 
             var exitAfterEvent = string.Equals(eventName, SystemExitEventName, StringComparison.OrdinalIgnoreCase);
             var matchingMacros = Macros
-                .Where(macro => macro.IsEnabled && macro.MatchesEvent(eventName))
+                .Where(macro => CanTriggerFromEvent(macro, eventName))
                 .ToList();
             var detail = string.IsNullOrWhiteSpace(payload) ? string.Empty : $" — {payload}";
-            WriteLog($"Événement reçu : {eventName}{detail} — {matchingMacros.Count} macro(s) correspondante(s).", eventName);
+            WriteLog($"Événement reçu : {eventName}{detail} — {matchingMacros.Count} macro(s) correspondante(s).",
+                eventName, indentLevel: logIndentLevel);
             foreach (var macro in matchingMacros)
             {
                 if (cancellationToken.IsCancellationRequested)
                     return;
-                if (!macro.IsEnabled)
+                if (!CanTriggerFromEvent(macro, eventName))
                     continue;
                 ExpandMacroForEvent(macro);
                 await ExecuteMacroInSessionAsync(macro, cancellationToken,
-                    triggerEvent: new TriggerEvent(eventName, payload, sourceId));
+                    triggerEvent: new TriggerEvent(eventName, payload, sourceId),
+                    logIndentLevel: NextLogIndentLevel(logIndentLevel));
             }
             if (exitAfterEvent && !cancellationToken.IsCancellationRequested)
             {
@@ -93,6 +96,16 @@ public partial class MainWindow
                 }
             }
         }
+    }
+
+    private static bool CanTriggerFromEvent(MacroDefinition macro, string eventName)
+    {
+        if (!macro.IsEnabled || !macro.MatchesEvent(eventName) || macro.Parent is not MacroGroup group)
+            return false;
+        for (MacroGroup? current = group; current is not null; current = current.Parent as MacroGroup)
+            if (!current.IsEnabled)
+                return false;
+        return true;
     }
 
     internal void EditEventItem_Click(object sender, RoutedEventArgs e)
@@ -140,7 +153,11 @@ public partial class MainWindow
         }
 
         var previousName = macroEvent.Name;
+        var references = GetEventReferences(macroEvent).ToArray();
         macro.EventNames[index] = name;
+        foreach (var reference in references)
+            reference.Value = name;
+        RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
         WriteLog($"Événement « {previousName} » modifié en « {name} » dans « {macro.Name} ».");
     }
 
@@ -155,9 +172,17 @@ public partial class MainWindow
         if (index < 0)
             return;
         macro.EventNames.RemoveAt(index);
+        RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
         SelectTreeItem(macro);
         WriteLog($"Événement « {macroEvent.Name} » supprimé de « {macro.Name} ».");
     }
+
+    private IEnumerable<MacroAction> GetEventReferences(MacroEvent macroEvent) =>
+        Macros.SelectMany(macro => macro.Actions).Concat(StartupActions)
+            .Where(action => action.Kind is MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem &&
+                action.ActivationTarget == ActivationTargetKind.Event &&
+                Guid.TryParse(action.Target, out var macroId) && macroId == macroEvent.Macro.Id &&
+                string.Equals(action.Value, macroEvent.Name, StringComparison.OrdinalIgnoreCase));
 
     private void CopyEventName_Click(object sender, RoutedEventArgs e)
     {

@@ -4,13 +4,10 @@
                     xmlns:local="clr-namespace:EventGhostDotNet">
     <HierarchicalDataTemplate DataType="{x:Type local:MacroDefinition}" ItemsSource="{Binding TreeChildren}">
         <StackPanel Orientation="Horizontal">
-            <CheckBox IsChecked="{Binding IsEnabled}" VerticalAlignment="Center" Margin="0,0,8,0"
-                      ToolTip="Activer ou désactiver la macro" AutomationProperties.Name="Macro active"/>
-            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,8,0"/>
-            <Button Style="{DynamicResource ItemIconButton}" Content="&#xE70F;"
-                    Click="EditMacroItem_Click" ToolTip="Modifier la macro" AutomationProperties.Name="Modifier la macro"/>
-            <Button Style="{DynamicResource ItemIconButton}" Content="&#xE74D;"
-                    Click="RemoveMacroItem_Click" Foreground="#B42318" ToolTip="Supprimer la macro" AutomationProperties.Name="Supprimer la macro"/>
+            <ContentControl Style="{DynamicResource ConfigurationItemIcon}" Tag="&#xE713;"
+                            IsEnabled="{Binding IsEnabled}" Foreground="#2F6F9F"
+                            AutomationProperties.Name="État de la macro"/>
+            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </StackPanel>
     </HierarchicalDataTemplate>
 </ResourceDictionary>

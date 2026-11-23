@@ -4,13 +4,10 @@
                     xmlns:local="clr-namespace:EventGhostDotNet">
     <DataTemplate DataType="{x:Type local:MacroAction}">
         <StackPanel Orientation="Horizontal">
-            <CheckBox IsChecked="{Binding IsEnabled}" VerticalAlignment="Center" Margin="0,0,8,0"
-                      ToolTip="Activer ou désactiver l'action" AutomationProperties.Name="Action active"/>
-            <TextBlock Text="{Binding DisplayName}" Margin="0,0,8,0"/>
-            <Button Style="{DynamicResource EditActionIconButton}" Content="&#xE70F;"
-                    Click="EditActionItem_Click" ToolTipService.ShowOnDisabled="True" AutomationProperties.Name="Modifier l'action"/>
-            <Button Style="{DynamicResource ItemIconButton}" Content="&#xE74D;"
-                    Click="RemoveActionItem_Click" Foreground="#B42318" ToolTip="Supprimer l'action" AutomationProperties.Name="Supprimer l'action"/>
+            <ContentControl Style="{DynamicResource ActionItemIcon}"
+                            IsEnabled="{Binding IsEnabled}" Foreground="#466586"
+                            AutomationProperties.Name="État de l'action"/>
+            <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
         </StackPanel>
     </DataTemplate>
 </ResourceDictionary>

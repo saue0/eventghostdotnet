@@ -25,6 +25,8 @@ public sealed class MacroAction : ConfigurationItem
     public MacroActionKind Kind { get; set; }
     public string Value { get; set; } = string.Empty;
     public string Target { get; set; } = string.Empty;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ActivationTargetKind? ActivationTarget { get; set; }
     public string PluginId { get; set; } = string.Empty;
     public string ActionId { get; set; } = string.Empty;
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -80,7 +82,8 @@ public sealed class MacroAction : ConfigurationItem
         MacroActionKind.LogitechSendRaw => $"Logitech — envoyer HID : {Value}",
         MacroActionKind.Plugin => PluginDisplayName ?? $"{PluginId} — {ActionId} : {Value}",
         MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or
-        MacroActionKind.EnableAction or MacroActionKind.DisableAction =>
+        MacroActionKind.EnableAction or MacroActionKind.DisableAction or
+        MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem =>
             SystemDisplayName ?? "Action système : cible indisponible",
         MacroActionKind.Jump or MacroActionKind.If =>
             SystemDisplayName ?? "Branchement système : configuration indisponible",
@@ -115,7 +118,18 @@ public enum MacroActionKind
     DisableAction,
     Jump,
     If,
-    RaiseEvent
+    RaiseEvent,
+    ActivateItem,
+    DeactivateItem
+}
+
+public enum ActivationTargetKind
+{
+    Group,
+    Macro,
+    Event,
+    Action,
+    PluginStartup
 }
 
 public enum JumpMode

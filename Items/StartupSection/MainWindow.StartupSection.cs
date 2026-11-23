@@ -36,8 +36,7 @@ public partial class MainWindow
 
     private void SelectStartupActionItem(MacroAction action)
     {
-        ConfigurationTree.UpdateLayout();
-        if (ConfigurationTree.ItemContainerGenerator.ContainerFromItem(_startupSection) is not TreeViewItem parent)
+        if (RevealTreeItem(_startupSection) is not TreeViewItem parent)
             return;
         parent.IsExpanded = true;
         parent.UpdateLayout();
@@ -50,15 +49,14 @@ public partial class MainWindow
 
     private void SelectStartupSection()
     {
-        ConfigurationTree.UpdateLayout();
-        if (ConfigurationTree.ItemContainerGenerator.ContainerFromItem(_startupSection) is TreeViewItem item)
+        if (RevealTreeItem(_startupSection) is TreeViewItem item)
             item.IsSelected = true;
     }
 
     private void SetStartupSectionExpanded(bool isExpanded)
     {
         _startupSection.IsExpanded = isExpanded;
-        if (ConfigurationTree.ItemContainerGenerator.ContainerFromItem(_startupSection) is TreeViewItem item)
+        if (RevealTreeItem(_startupSection) is TreeViewItem item)
             item.IsExpanded = isExpanded;
     }
 }

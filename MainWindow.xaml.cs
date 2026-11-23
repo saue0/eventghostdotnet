@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -38,12 +39,21 @@ namespace EventGhostDotNet;
 
 public partial class MainWindow : Window
 {
+    public static readonly DependencyProperty IsLastSiblingProperty =
+        DependencyProperty.RegisterAttached("IsLastSibling", typeof(bool), typeof(MainWindow),
+            new FrameworkPropertyMetadata(true));
+
+    public static readonly DependencyProperty IsTreeRootProperty =
+        DependencyProperty.RegisterAttached("IsTreeRoot", typeof(bool), typeof(MainWindow),
+            new FrameworkPropertyMetadata(false));
+
     private const string ApplicationStartupEventName = "System.Startup";
     private const string ConfigurationLoadedEventName = "System.ConfigurationLoaded";
     private const string SystemShowEventName = "System.Show";
     private const string SystemHideEventName = "System.Hide";
     private const string SystemExitEventName = "System.Exit";
     private const int MaximumMacroCallDepth = 32;
+    private const int MaximumLogIndentLevel = 64;
     private const int MaximumActionExecutionsPerMacro = 10000;
 
     private enum StartupWindowMode
@@ -73,11 +83,12 @@ public partial class MainWindow : Window
         private readonly string _label;
         private readonly AnsiLogFormatter _formatter;
         private readonly LogCategory _category;
+        private readonly int _indentLevel;
         private TextBlock _display = new();
         private string _text = string.Empty;
 
         public EventLogEntry(DateTime timestamp, string message, string? eventName, AnsiLogFormatter formatter,
-            LogLevel level, LogCategory category)
+            LogLevel level, LogCategory category, int indentLevel)
         {
             var (symbol, label, color) = level switch
             {
@@ -93,6 +104,7 @@ public partial class MainWindow : Window
             _message = message;
             _formatter = formatter;
             _category = category;
+            _indentLevel = indentLevel;
             LevelColor = color;
             EventName = eventName;
             Level = level;
@@ -114,8 +126,8 @@ public partial class MainWindow : Window
                 prefix += $"[{_timestamp.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}] ";
             if (showTime)
                 prefix += $"[{_timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}] ";
-            if (indent && _category == LogCategory.Action)
-                prefix = "  " + prefix;
+            if (indent && _indentLevel > 0)
+                prefix = new string(' ', _indentLevel * 2) + prefix;
 
             var display = new TextBlock { Foreground = LevelColor };
             display.Inlines.Add(new Run(prefix));
@@ -141,10 +153,11 @@ public partial class MainWindow : Window
 
     private sealed record SystemMacroChoice(MacroDefinition Macro, string Label);
     private sealed record SystemActionChoice(MacroAction Action, string Label);
+    private sealed record ActivationTargetChoice(ActivationTargetKind Kind, string Target, string Value, string Label);
     private sealed record JumpModeChoice(JumpMode Mode, string Label);
     private sealed record IfComparisonChoice(IfComparison Comparison, string Label);
     private sealed record SystemActionResult(
-        string Message, Guid MacroId, Guid? ActionId, bool PreviousState, bool CurrentState);
+        string Message, ActivationTargetKind Kind, string Target, string Value, bool PreviousState, bool CurrentState);
 
     private sealed class ConfigurationDocument
     {
@@ -159,7 +172,8 @@ public partial class MainWindow : Window
     private sealed record TriggerEvent(string Name, string? Payload, string? SourceId);
 
     private sealed class ActionContext(
-        MainWindow window, CancellationToken sessionToken, object? initialResult, TriggerEvent? triggerEvent = null) : IActionContext
+        MainWindow window, CancellationToken sessionToken, object? initialResult, TriggerEvent? triggerEvent = null,
+        int? logIndentLevel = null) : IActionContext
     {
         private readonly object _resultLock = new();
         private readonly AnsiLogFormatter _logFormatter = new();
@@ -167,6 +181,7 @@ public partial class MainWindow : Window
         public TriggerEvent? Event => triggerEvent;
         public MainWindow Window => window;
         public CancellationToken CancellationToken => sessionToken;
+        public int? LogIndentLevel => logIndentLevel;
 
         public object? Result
         {
@@ -189,14 +204,15 @@ public partial class MainWindow : Window
             if (!Enum.IsDefined(level))
                 throw new InvalidOperationException($"Niveau de journal invalide : {level}.");
             window.Dispatcher.BeginInvoke(new Action(() =>
-                window.WriteLog(message, null, _logFormatter, level, LogCategory.Action)));
+                window.WriteLog(message, null, _logFormatter, level, LogCategory.Action, logIndentLevel ?? 1)));
         }
 
         public void RaiseEvent(string name, string? payload) => RaiseEventFromSource(name, payload, null);
 
         public void RaiseEventFromSource(string name, string? payload, string? sourceId) =>
             window.Dispatcher.BeginInvoke(
-                new Action(() => _ = window.DispatchEventAsync(name, payload, sessionToken, sourceId)));
+                new Action(() => _ = window.DispatchEventAsync(name, payload, sessionToken, sourceId,
+                    logIndentLevel ?? 0)));
     }
 
     private sealed class PluginHost(MainWindow window, ActionContext context, string? sourceId = null) : IPluginHost
@@ -225,11 +241,14 @@ public partial class MainWindow : Window
             await window.Dispatcher.InvokeAsync(async () =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken, context.CancellationToken);
                 var macro = window.Macros.FirstOrDefault(item => item.Id == macroId)
                     ?? throw new InvalidOperationException($"Macro introuvable : {macroId}.");
                 if (!macro.IsEnabled)
                     throw new InvalidOperationException($"La macro « {macro.Name} » est désactivée.");
-                await window.ExecuteMacroInSessionAsync(macro, cancellationToken);
+                await window.ExecuteMacroInSessionAsync(macro, linkedCancellation.Token,
+                    logIndentLevel: context.LogIndentLevel ?? 0, actionContextToken: cancellationToken);
             }).Task.Unwrap();
         }
         public void Log(string message) => context.Log(message);
@@ -250,6 +269,7 @@ public partial class MainWindow : Window
         "configuration.json");
     private readonly PluginLoader _pluginLoader = new();
     private readonly ObservableCollection<EventLogEntry> _logEntries = [];
+    private readonly ConditionalWeakTable<ItemsControl, object> _treeConnectorParents = new();
     private ICollectionView? _logView;
     private readonly HashSet<Task> _activeMacroExecutions = [];
     private readonly SemaphoreSlim _pluginLifecycleGate = new(1, 1);
@@ -257,8 +277,8 @@ public partial class MainWindow : Window
     private string _cleanConfiguration = string.Empty;
     private MacroDefinition? _selectedMacro;
     private readonly StartupSection _startupSection;
+    private readonly ConfigurationRoot _configurationRoot;
     private readonly MacroDefinition _startupMacro;
-    private readonly CompositeCollection _treeRoots = [];
     private Forms.NotifyIcon? _applicationTrayIcon;
     private System.Drawing.Icon? _applicationTrayImage;
     private Forms.ContextMenuStrip? _applicationTrayMenu;
@@ -276,6 +296,35 @@ public partial class MainWindow : Window
     public ObservableCollection<PluginStartupConfiguration> PluginStartups => _startupSection.Configurations;
     public ObservableCollection<MacroAction> StartupActions => _startupSection.Actions;
 
+    public static bool GetIsLastSibling(DependencyObject element) =>
+        (bool)element.GetValue(IsLastSiblingProperty);
+
+    public static void SetIsLastSibling(DependencyObject element, bool value) =>
+        element.SetValue(IsLastSiblingProperty, value);
+
+    public static bool GetIsTreeRoot(DependencyObject element) =>
+        (bool)element.GetValue(IsTreeRootProperty);
+
+    public static void SetIsTreeRoot(DependencyObject element, bool value) =>
+        element.SetValue(IsTreeRootProperty, value);
+
+    private void UpdateTreeConnectorLines(ItemsControl parent)
+    {
+        var generator = parent.ItemContainerGenerator;
+        if (!_treeConnectorParents.TryGetValue(parent, out _))
+        {
+            _treeConnectorParents.Add(parent, new object());
+            generator.ItemsChanged += (_, _) => UpdateTreeConnectorLines(parent);
+        }
+
+        for (var index = 0; index < parent.Items.Count; index++)
+            if (generator.ContainerFromIndex(index) is TreeViewItem item)
+            {
+                SetIsLastSibling(item, index == parent.Items.Count - 1);
+                SetIsTreeRoot(item, parent is System.Windows.Controls.TreeView);
+            }
+    }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -284,10 +333,9 @@ public partial class MainWindow : Window
         LogList.ItemsSource = _logView;
         ConfigurationPathText.Text = _configurationPath;
         _startupSection = new StartupSection();
+        _configurationRoot = new ConfigurationRoot(_startupSection);
         _startupMacro = new MacroDefinition(StartupActions) { Name = "Démarrage" };
-        _treeRoots.Add(_startupSection);
-        _treeRoots.Add(new CollectionContainer { Collection = MacroGroups });
-        ConfigurationTree.ItemsSource = _treeRoots;
+        ConfigurationTree.ItemsSource = new[] { _configurationRoot };
         _pluginLoader.Load(Path.Combine(GetApplicationDirectory(), "Plugins"), WriteLog);
         LoadConfiguration();
         if (_startupWindowMode == StartupWindowMode.MinimizeToTray)
@@ -754,9 +802,12 @@ public partial class MainWindow : Window
                 Add("Supprimer", RemovePluginStartupItem_Click);
                 break;
             case MacroGroup group:
+                Add("Ajouter un sous-groupe", AddMacroGroup_Click);
                 Add("Ajouter une macro", AddMacro_Click);
                 Add("Renommer", RenameMacroGroupItem_Click);
-                Add("Supprimer", RemoveMacroGroupItem_Click, MacroGroups.Count > 1 && group.Macros.Count == 0);
+                Add("Supprimer", RemoveMacroGroupItem_Click,
+                    MacroGroups.Count > 1 && group.Macros.Count == 0 && group.Groups.Count == 0);
+                Add(group.IsEnabled ? "Désactiver" : "Activer", ToggleSelectedEnabled_Click);
                 AddMoveCommands();
                 break;
             case MacroDefinition macro:
@@ -784,7 +835,7 @@ public partial class MainWindow : Window
                 Add("Exécuter", RunMacro_Click);
                 AddMoveCommands();
                 break;
-            case null:
+            case ConfigurationRoot or null:
                 Add("Ajouter un groupe", AddMacroGroup_Click);
                 break;
         }
@@ -815,8 +866,9 @@ public partial class MainWindow : Window
         switch (selectedItem)
         {
             case MacroGroup group:
-                index = MacroGroups.IndexOf(group);
-                count = MacroGroups.Count;
+                var siblings = GetGroupSiblings(group);
+                index = siblings.IndexOf(group);
+                count = siblings.Count;
                 break;
             case MacroDefinition macro:
                 var ownerGroup = FindMacroGroup(macro);
@@ -852,10 +904,11 @@ public partial class MainWindow : Window
     {
         switch (ConfigurationTree.SelectedItem)
         {
-            case MacroGroup group when MoveItem(MacroGroups, group, offset):
+            case MacroGroup group when MoveItem(GetGroupSiblings(group), group, offset):
+                SynchronizeGroupOrder();
                 SynchronizeMacroOrder();
                 SelectMacroGroup(group);
-                WriteLog($"Groupe « {group.Name} » déplacé à la position {MacroGroups.IndexOf(group) + 1}.");
+                WriteLog($"Groupe « {group.Name} » déplacé à la position {GetGroupSiblings(group).IndexOf(group) + 1}.");
                 break;
             case MacroDefinition macro:
                 var ownerGroup = FindMacroGroup(macro);
@@ -895,6 +948,8 @@ public partial class MainWindow : Window
     {
         if (sender is not TreeViewItem item)
             return;
+        if (ItemsControl.ItemsControlFromItemContainer(item) is ItemsControl parent)
+            UpdateTreeConnectorLines(parent);
         switch (item.DataContext)
         {
             case StartupSection section:
@@ -1234,7 +1289,11 @@ public partial class MainWindow : Window
             _startupWindowMode = StartupWindowMode.Show;
             WriteLog($"Impossible de charger la configuration : {exception.Message}", LogLevel.Error);
             if (MacroGroups.Count == 0)
-                MacroGroups.Add(new MacroGroup());
+            {
+                var group = new MacroGroup();
+                _configurationRoot.Groups.Add(group);
+                MacroGroups.Add(group);
+            }
             AddMacroToGroup(CreateSampleMacro(), MacroGroups[0]);
         }
     }
@@ -1285,6 +1344,7 @@ public partial class MainWindow : Window
                 MacroActionKind.ShowMessage or MacroActionKind.AskYesNo or MacroActionKind.Stop or
                 MacroActionKind.OpenUrl or MacroActionKind.PowerShell or MacroActionKind.Plugin or
                 MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or MacroActionKind.EnableAction or MacroActionKind.DisableAction or
+                MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem or
                 MacroActionKind.Jump or MacroActionKind.If or MacroActionKind.RaiseEvent))
             {
                 var match = _pluginLoader.FindLegacy(action.Kind.ToString());
@@ -1306,7 +1366,7 @@ public partial class MainWindow : Window
         RefreshSystemActionDescriptions(configuration.Macros.Append(new MacroDefinition(configuration.StartupActions)
         {
             Name = "Démarrage"
-        }));
+        }), configuration.MacroGroups, configuration.StartupActions, configuration.PluginStartups);
         return configuration;
     }
 
@@ -1331,6 +1391,20 @@ public partial class MainWindow : Window
             configuration.MacroGroups.Add(new MacroGroup());
 
         var groupIds = configuration.MacroGroups.Select(group => group.Id).ToHashSet();
+        var groupsById = configuration.MacroGroups.ToDictionary(group => group.Id);
+        foreach (var group in configuration.MacroGroups)
+        {
+            var ancestors = new HashSet<Guid> { group.Id };
+            var parentId = group.ParentGroupId;
+            while (parentId is { } id)
+            {
+                if (!groupsById.TryGetValue(id, out var parent))
+                    throw new JsonException($"Le groupe parent de « {group.Name} » est introuvable.");
+                if (!ancestors.Add(id))
+                    throw new JsonException($"La hiérarchie des groupes contient un cycle : « {group.Name} ».");
+                parentId = parent.ParentGroupId;
+            }
+        }
         var defaultGroupId = configuration.MacroGroups[0].Id;
         foreach (var macro in configuration.Macros)
         {
@@ -1341,12 +1415,22 @@ public partial class MainWindow : Window
 
     private void LoadMacroCollections(ConfigurationDocument configuration)
     {
+        _configurationRoot.Groups.Clear();
         MacroGroups.Clear();
         Macros.Clear();
         foreach (var group in configuration.MacroGroups)
         {
             group.Macros.Clear();
+            group.Groups.Clear();
             MacroGroups.Add(group);
+        }
+        var groupsById = MacroGroups.ToDictionary(group => group.Id);
+        foreach (var group in MacroGroups)
+        {
+            var siblings = group.ParentGroupId is { } parentId
+                ? groupsById[parentId].Groups
+                : _configurationRoot.Groups;
+            siblings.Add(group);
         }
         foreach (var macro in configuration.Macros)
         {
@@ -1627,17 +1711,19 @@ public partial class MainWindow : Window
 
     private void WriteLog(
         string message, string? eventName, AnsiLogFormatter? formatter = null, LogLevel level = LogLevel.Information,
-        LogCategory category = LogCategory.General)
+        LogCategory category = LogCategory.General, int indentLevel = 0)
     {
         var entry = new EventLogEntry(DateTime.Now, message, eventName, formatter ?? new AnsiLogFormatter(),
-            level, category);
+            level, category, indentLevel);
         entry.RefreshDisplay(ShowLogTimeMenuItem.IsChecked == true,
             DateStampLogMenuItem.IsChecked == true, IndentLogMenuItem.IsChecked == true);
         _logEntries.Add(entry);
-        while (_logEntries.Count > 500)
+        while (_logEntries.Count > 5000)
             _logEntries.RemoveAt(0);
         ScrollLogToEnd();
     }
+
+    private static int NextLogIndentLevel(int level) => Math.Min(level + 1, MaximumLogIndentLevel);
 
     private string? PromptForText(string title, string prompt, string initialValue)
     {

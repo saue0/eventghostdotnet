@@ -338,7 +338,6 @@ public partial class MainWindow
 
     private MacroAction? PromptForSystemAction(MacroActionKind kind, MacroAction? existing)
     {
-        var requiresAction = kind is MacroActionKind.EnableAction or MacroActionKind.DisableAction;
         var dialog = new Window
         {
             Title = SystemActionName(kind),
@@ -349,46 +348,29 @@ public partial class MainWindow
             Padding = new Thickness(16)
         };
         var panel = new StackPanel { Width = 560 };
-        panel.Children.Add(new TextBlock { Text = "Macro cible :", Margin = new Thickness(0, 0, 0, 5) });
-        var macroChoices = Macros.Select((macro, index) => new SystemMacroChoice(macro, $"{index + 1}. {macro.Name}")).ToArray();
-        var macroSelector = new ComboBox
+        panel.Children.Add(new TextBlock { Text = "Élément cible :", Margin = new Thickness(0, 0, 0, 5) });
+        var choices = GetActivationTargetChoices();
+        ActivationTargetKind? existingKind = existing?.Kind is MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem
+            ? existing.ActivationTarget
+            : existing is null ? null : GetActivationTargetKind(existing);
+        var selector = new ComboBox
         {
-            ItemsSource = macroChoices,
-            DisplayMemberPath = nameof(SystemMacroChoice.Label),
+            ItemsSource = choices,
+            DisplayMemberPath = nameof(ActivationTargetChoice.Label),
             Margin = new Thickness(0, 0, 0, 12),
-            SelectedItem = existing is null ? macroChoices.FirstOrDefault() :
-                macroChoices.FirstOrDefault(choice => Guid.TryParse(existing.Target, out var id) && choice.Macro.Id == id)
+            SelectedItem = existing is null ? choices.FirstOrDefault() :
+                choices.FirstOrDefault(choice => choice.Kind == existingKind && MatchesActivationChoice(choice, existing))
         };
-        panel.Children.Add(macroSelector);
-
-        ComboBox? actionSelector = null;
-        if (requiresAction)
-        {
-            panel.Children.Add(new TextBlock { Text = "Action cible :", Margin = new Thickness(0, 0, 0, 5) });
-            actionSelector = new ComboBox { DisplayMemberPath = nameof(SystemActionChoice.Label), Margin = new Thickness(0, 0, 0, 12) };
-            panel.Children.Add(actionSelector);
-            void UpdateActionChoices()
-            {
-                var targetMacro = (macroSelector.SelectedItem as SystemMacroChoice)?.Macro;
-                var actionChoices = targetMacro?.Actions.Select((action, index) =>
-                    new SystemActionChoice(action, $"{index + 1}. {ActionTargetName(action)}")).ToArray() ?? [];
-                actionSelector.ItemsSource = actionChoices;
-                actionSelector.SelectedItem = existing is null ? actionChoices.FirstOrDefault() :
-                    actionChoices.FirstOrDefault(choice => Guid.TryParse(existing.Value, out var id) && choice.Action.Id == id);
-            }
-            macroSelector.SelectionChanged += (_, _) => UpdateActionChoices();
-            UpdateActionChoices();
-        }
+        panel.Children.Add(selector);
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
         var save = new Button { Content = "Enregistrer", IsDefault = true };
         save.Click += (_, _) =>
         {
-            if (macroSelector.SelectedItem is not SystemMacroChoice ||
-                (requiresAction && actionSelector?.SelectedItem is not SystemActionChoice))
+            if (selector.SelectedItem is not ActivationTargetChoice)
             {
-                MessageBox.Show(dialog, "Sélectionnez une macro et, si nécessaire, une action cible.",
+                MessageBox.Show(dialog, "Sélectionnez un élément cible.",
                     "Cible requise", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -397,15 +379,61 @@ public partial class MainWindow
         buttons.Children.Add(save);
         panel.Children.Add(buttons);
         dialog.Content = panel;
-        if (dialog.ShowDialog() != true || macroSelector.SelectedItem is not SystemMacroChoice selected)
+        if (dialog.ShowDialog() != true || selector.SelectedItem is not ActivationTargetChoice selected)
             return null;
 
         return new MacroAction
         {
-            Kind = kind,
-            Target = selected.Macro.Id.ToString(),
-            Value = (actionSelector?.SelectedItem as SystemActionChoice)?.Action.Id.ToString() ?? string.Empty
+            Kind = kind is MacroActionKind.EnableMacro or MacroActionKind.EnableAction or MacroActionKind.ActivateItem
+                ? MacroActionKind.ActivateItem : MacroActionKind.DeactivateItem,
+            ActivationTarget = selected.Kind,
+            Target = selected.Target,
+            Value = selected.Value
         };
+    }
+
+    private static bool MatchesActivationChoice(ActivationTargetChoice choice, MacroAction action)
+    {
+        var targetMatches = choice.Kind == ActivationTargetKind.PluginStartup
+            ? string.Equals(choice.Target, action.Target, StringComparison.Ordinal)
+            : string.Equals(choice.Target, "Startup", StringComparison.OrdinalIgnoreCase)
+                ? string.Equals(choice.Target, action.Target, StringComparison.OrdinalIgnoreCase)
+                : Guid.TryParse(choice.Target, out var choiceId) &&
+                  Guid.TryParse(action.Target, out var targetId) && choiceId == targetId;
+        if (!targetMatches)
+            return false;
+        return choice.Kind switch
+        {
+            ActivationTargetKind.Event => string.Equals(choice.Value, action.Value, StringComparison.OrdinalIgnoreCase),
+            ActivationTargetKind.Action => Guid.TryParse(choice.Value, out var choiceActionId) &&
+                                           Guid.TryParse(action.Value, out var actionId) && choiceActionId == actionId,
+            _ => true
+        };
+    }
+
+    private List<ActivationTargetChoice> GetActivationTargetChoices()
+    {
+        var choices = new List<ActivationTargetChoice>();
+        foreach (var group in MacroGroups)
+            choices.Add(new(ActivationTargetKind.Group, group.Id.ToString(), string.Empty, $"Groupe : {group.Name}"));
+        foreach (var macro in Macros)
+        {
+            var macroId = macro.Id.ToString();
+            choices.Add(new(ActivationTargetKind.Macro, macroId, string.Empty, $"Macro : {macro.Name}"));
+            foreach (var macroEvent in macro.EventItems)
+                choices.Add(new(ActivationTargetKind.Event, macroId, macroEvent.Name,
+                    $"Événement : {macro.Name} — {macroEvent.Name}"));
+            foreach (var (action, index) in macro.Actions.Select((action, index) => (action, index)))
+                choices.Add(new(ActivationTargetKind.Action, macroId, action.Id.ToString(),
+                    $"Action : {macro.Name} — {index + 1}. {ActionTargetName(action)}"));
+        }
+        foreach (var (action, index) in StartupActions.Select((action, index) => (action, index)))
+            choices.Add(new(ActivationTargetKind.Action, "Startup", action.Id.ToString(),
+                $"Action : Démarrage — {index + 1}. {ActionTargetName(action)}"));
+        foreach (var startup in PluginStartups)
+            choices.Add(new(ActivationTargetKind.PluginStartup, startup.InstanceId, string.Empty,
+                $"Démarrage de plugin : {startup.DisplayName}"));
+        return choices;
     }
 
     private MacroAction? PromptForFlowAction(
@@ -564,11 +592,13 @@ public partial class MainWindow
     private static bool IsSystemAction(MacroActionKind kind) =>
         kind is MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or
             MacroActionKind.EnableAction or MacroActionKind.DisableAction or
+            MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem or
             MacroActionKind.Jump or MacroActionKind.If;
 
     private static bool IsTargetedSystemAction(MacroActionKind kind) =>
         kind is MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or
-            MacroActionKind.EnableAction or MacroActionKind.DisableAction;
+            MacroActionKind.EnableAction or MacroActionKind.DisableAction or
+            MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem;
 
     private static string SystemActionName(MacroActionKind kind) => kind switch
     {
@@ -576,6 +606,8 @@ public partial class MainWindow
         MacroActionKind.DisableMacro => "Système — désactiver une macro",
         MacroActionKind.EnableAction => "Système — activer une action",
         MacroActionKind.DisableAction => "Système — désactiver une action",
+        MacroActionKind.ActivateItem => "Système — activer",
+        MacroActionKind.DeactivateItem => "Système — désactiver",
         MacroActionKind.Jump => "Système — Jump",
         MacroActionKind.If => "Système — If",
         _ => throw new InvalidOperationException($"Action système inconnue : {kind}")
@@ -593,15 +625,6 @@ public partial class MainWindow
             throw new InvalidOperationException("La macro cible est introuvable ou son identifiant est dupliqué.");
     }
 
-    private static MacroAction FindSystemTargetAction(MacroDefinition macro, MacroAction action)
-    {
-        if (!Guid.TryParse(action.Value, out var id) || id == Guid.Empty)
-            throw new InvalidOperationException("Identifiant d'action cible invalide.");
-        var matches = macro.Actions.Where(item => item.Id == id).Take(2).ToArray();
-        return matches.Length == 1 ? matches[0] :
-            throw new InvalidOperationException($"L'action cible de « {macro.Name} » est introuvable ou son identifiant est dupliqué.");
-    }
-
     private static MacroAction FindJumpTargetAction(MacroDefinition macro, MacroAction action)
     {
         if (!Guid.TryParse(action.Value, out var id) || id == Guid.Empty)
@@ -611,29 +634,95 @@ public partial class MainWindow
             throw new InvalidOperationException($"L'action cible de Jump dans « {macro.Name} » est introuvable ou son identifiant est dupliqué.");
     }
 
-    private static SystemActionResult ExecuteSystemAction(IEnumerable<MacroDefinition> macros, MacroAction action)
+    private static ActivationTargetKind GetActivationTargetKind(MacroAction action) => action.Kind switch
     {
-        var macro = FindSystemTargetMacro(macros, action);
-        switch (action.Kind)
+        MacroActionKind.EnableMacro or MacroActionKind.DisableMacro => ActivationTargetKind.Macro,
+        MacroActionKind.EnableAction or MacroActionKind.DisableAction => ActivationTargetKind.Action,
+        MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem => action.ActivationTarget
+            ?? throw new InvalidOperationException("Le type de l'élément cible est absent."),
+        _ => throw new InvalidOperationException($"Action système inconnue : {action.Kind}")
+    };
+
+    private static ConfigurationItem? FindActivationTarget(
+        IEnumerable<MacroGroup> groups, IEnumerable<MacroDefinition> macros,
+        IEnumerable<MacroAction> startupActions, IEnumerable<PluginStartupConfiguration> startups,
+        ActivationTargetKind kind, string target, string value)
+    {
+        switch (kind)
         {
-            case MacroActionKind.EnableMacro:
-            case MacroActionKind.DisableMacro:
-                var previousMacroState = macro.IsEnabled;
-                macro.IsEnabled = action.Kind == MacroActionKind.EnableMacro;
-                return new SystemActionResult(
-                    $"Macro « {macro.Name} » {(macro.IsEnabled ? "activée" : "désactivée")}.",
-                    macro.Id, null, previousMacroState, macro.IsEnabled);
-            case MacroActionKind.EnableAction:
-            case MacroActionKind.DisableAction:
-                var target = FindSystemTargetAction(macro, action);
-                var previousActionState = target.IsEnabled;
-                target.IsEnabled = action.Kind == MacroActionKind.EnableAction;
-                return new SystemActionResult(
-                    $"Action « {ActionTargetName(target)} » de « {macro.Name} » {(target.IsEnabled ? "activée" : "désactivée")}.",
-                    macro.Id, target.Id, previousActionState, target.IsEnabled);
+            case ActivationTargetKind.Group:
+                return Guid.TryParse(target, out var groupId)
+                    ? groups.SingleOrDefault(group => group.Id == groupId) : null;
+            case ActivationTargetKind.Macro:
+                return Guid.TryParse(target, out var macroId)
+                    ? macros.SingleOrDefault(macro => macro.Id == macroId) : null;
+            case ActivationTargetKind.Event:
+                if (!Guid.TryParse(target, out var eventMacroId))
+                    return null;
+                var eventMacro = macros.SingleOrDefault(macro => macro.Id == eventMacroId);
+                return eventMacro?.EventItems.SingleOrDefault(item =>
+                    string.Equals(item.Name, value, StringComparison.OrdinalIgnoreCase));
+            case ActivationTargetKind.Action:
+                if (!Guid.TryParse(value, out var actionId))
+                    return null;
+                var actions = string.Equals(target, "Startup", StringComparison.OrdinalIgnoreCase)
+                    ? startupActions
+                    : Guid.TryParse(target, out var actionMacroId)
+                        ? macros.SingleOrDefault(macro => macro.Id == actionMacroId)?.Actions
+                        : null;
+                return actions?.SingleOrDefault(item => item.Id == actionId);
+            case ActivationTargetKind.PluginStartup:
+                return startups.SingleOrDefault(item => string.Equals(item.InstanceId, target, StringComparison.Ordinal));
             default:
-                throw new InvalidOperationException($"Action système inconnue : {action.Kind}");
+                throw new InvalidOperationException($"Type d'élément cible inconnu : {kind}");
         }
+    }
+
+    private static bool GetActivationState(ConfigurationItem item) => item switch
+    {
+        MacroGroup group => group.IsEnabled,
+        MacroDefinition macro => macro.IsEnabled,
+        MacroEvent macroEvent => macroEvent.IsEnabled,
+        MacroAction action => action.IsEnabled,
+        PluginStartupConfiguration startup => startup.IsEnabled,
+        _ => throw new InvalidOperationException("Cet élément ne peut pas être activé ou désactivé.")
+    };
+
+    private static void SetActivationState(ConfigurationItem item, bool enabled)
+    {
+        switch (item)
+        {
+            case MacroGroup group: group.IsEnabled = enabled; break;
+            case MacroDefinition macro: macro.IsEnabled = enabled; break;
+            case MacroEvent macroEvent: macroEvent.IsEnabled = enabled; break;
+            case MacroAction action: action.IsEnabled = enabled; break;
+            case PluginStartupConfiguration startup: startup.IsEnabled = enabled; break;
+            default: throw new InvalidOperationException("Cet élément ne peut pas être activé ou désactivé.");
+        }
+    }
+
+    private static string ActivationTargetName(ConfigurationItem item) => item switch
+    {
+        MacroGroup group => $"Groupe « {group.Name} »",
+        MacroDefinition macro => $"Macro « {macro.Name} »",
+        MacroEvent macroEvent => $"Événement « {macroEvent.Name} » de « {macroEvent.Macro.Name} »",
+        MacroAction action => $"Action « {ActionTargetName(action)} »",
+        PluginStartupConfiguration startup => $"Démarrage « {startup.DisplayName} »",
+        _ => throw new InvalidOperationException("Cet élément ne peut pas être activé ou désactivé.")
+    };
+
+    private static SystemActionResult ExecuteSystemAction(
+        IEnumerable<MacroGroup> groups, IEnumerable<MacroDefinition> macros,
+        IEnumerable<MacroAction> startupActions, IEnumerable<PluginStartupConfiguration> startups, MacroAction action)
+    {
+        var kind = GetActivationTargetKind(action);
+        var target = FindActivationTarget(groups, macros, startupActions, startups, kind, action.Target, action.Value)
+            ?? throw new InvalidOperationException("L'élément cible est introuvable.");
+        var previous = GetActivationState(target);
+        var enabled = action.Kind is MacroActionKind.EnableMacro or MacroActionKind.EnableAction or MacroActionKind.ActivateItem;
+        SetActivationState(target, enabled);
+        return new SystemActionResult($"{ActivationTargetName(target)} : {(enabled ? "activé" : "désactivé")}.",
+            kind, action.Target, action.Value, previous, enabled);
     }
 
     private static string AcceptRuntimeStateChange(string cleanConfiguration, SystemActionResult result)
@@ -643,28 +732,22 @@ public partial class MainWindow
 
         var configuration = JsonSerializer.Deserialize<ConfigurationDocument>(cleanConfiguration, JsonOptions)
             ?? throw new JsonException("La référence de configuration est invalide.");
-        var macro = configuration.Macros.SingleOrDefault(item => item.Id == result.MacroId);
-        if (macro is null)
+        var target = FindActivationTarget(configuration.MacroGroups, configuration.Macros,
+            configuration.StartupActions, configuration.PluginStartups, result.Kind, result.Target, result.Value);
+        if (target is null || GetActivationState(target) != result.PreviousState)
             return cleanConfiguration;
 
         // Preserve a manually changed state in the dirty comparison.
-        if (result.ActionId is Guid actionId)
-        {
-            var action = macro.Actions.SingleOrDefault(item => item.Id == actionId);
-            if (action is null || action.IsEnabled != result.PreviousState)
-                return cleanConfiguration;
-            action.IsEnabled = result.CurrentState;
-        }
-        else
-        {
-            if (macro.IsEnabled != result.PreviousState)
-                return cleanConfiguration;
-            macro.IsEnabled = result.CurrentState;
-        }
+        SetActivationState(target, result.CurrentState);
         return JsonSerializer.Serialize(configuration, JsonOptions);
     }
 
-    private static void RefreshSystemActionDescriptions(IEnumerable<MacroDefinition> macros)
+    private void RefreshSystemActionDescriptions(IEnumerable<MacroDefinition> macros) =>
+        RefreshSystemActionDescriptions(macros, MacroGroups, StartupActions, PluginStartups);
+
+    private static void RefreshSystemActionDescriptions(IEnumerable<MacroDefinition> macros,
+        IEnumerable<MacroGroup> groups, IEnumerable<MacroAction> startupActions,
+        IEnumerable<PluginStartupConfiguration> startups)
     {
         foreach (var (ownerMacro, action) in macros.SelectMany(macro =>
                      macro.Actions.Select(action => (Owner: macro, Action: action))))
@@ -708,14 +791,10 @@ public partial class MainWindow
                     continue;
                 }
 
-                var macro = FindSystemTargetMacro(macros, action);
-                var target = string.Empty;
-                if (action.Kind is MacroActionKind.EnableAction or MacroActionKind.DisableAction)
-                {
-                    var targetAction = FindSystemTargetAction(macro, action);
-                    target = $" — {macro.Actions.IndexOf(targetAction) + 1}. {ActionTargetName(targetAction)}";
-                }
-                action.SystemDisplayName = $"{SystemActionName(action.Kind)} : {macro.Name}{target}";
+                var target = FindActivationTarget(groups, macros, startupActions, startups,
+                    GetActivationTargetKind(action), action.Target, action.Value)
+                    ?? throw new InvalidOperationException("L'élément cible est introuvable.");
+                action.SystemDisplayName = $"{SystemActionName(action.Kind)} : {ActivationTargetName(target)}";
             }
             catch (InvalidOperationException)
             {
@@ -1276,10 +1355,8 @@ public partial class MainWindow
             new(MacroActionKind.Stop, "Arrêter la macro"),
             new(MacroActionKind.OpenUrl, "Ouvrir une URL"),
             new(MacroActionKind.PowerShell, "Script PowerShell"),
-            new(MacroActionKind.EnableMacro, "Activer une macro"),
-            new(MacroActionKind.DisableMacro, "Désactiver une macro"),
-            new(MacroActionKind.EnableAction, "Activer une action"),
-            new(MacroActionKind.DisableAction, "Désactiver une action"),
+            new(MacroActionKind.ActivateItem, "Activer un élément"),
+            new(MacroActionKind.DeactivateItem, "Désactiver un élément"),
             new(MacroActionKind.Jump, "Jump"),
             new(MacroActionKind.If, "If"),
             new(MacroActionKind.RaiseEvent, "Déclencher un événement")

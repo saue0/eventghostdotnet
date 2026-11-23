@@ -33,7 +33,8 @@ public partial class MainWindow
     private int _lastFindIndex = -1;
 
     private sealed record ClipboardPayload(
-        string Type, string Value, IReadOnlyList<string>? Children = null, string? SourceId = null);
+        string Type, string Value, IReadOnlyList<string>? Children = null, string? SourceId = null,
+        IReadOnlyList<ClipboardPayload>? Groups = null, bool IsEnabled = true);
     private sealed record ClipboardEvent(string Name, bool IsEnabled);
     private sealed record SearchTarget(string Label, Action Select);
 
@@ -171,8 +172,7 @@ public partial class MainWindow
             return;
         group.IsExpanded = true;
         macro.IsExpanded = true;
-        ConfigurationTree.UpdateLayout();
-        if (FindTreeItemByDataContext(group) is { } groupItem)
+        if (RevealTreeItem(group) is { } groupItem)
             groupItem.IsExpanded = true;
         if (FindTreeItemByDataContext(macro) is { } macroItem)
             macroItem.IsExpanded = true;
@@ -266,6 +266,10 @@ public partial class MainWindow
     {
         switch (ConfigurationTree.SelectedItem)
         {
+            case MacroGroup group:
+                group.IsEnabled = !group.IsEnabled;
+                WriteLog($"Groupe « {group.Name} » {(group.IsEnabled ? "activé" : "désactivé")}.");
+                break;
             case MacroDefinition macro:
                 macro.IsEnabled = !macro.IsEnabled;
                 WriteLog($"Macro « {macro.Name} » {(macro.IsEnabled ? "activée" : "désactivée")}.");
@@ -298,13 +302,14 @@ public partial class MainWindow
         DeleteMenuItem.IsEnabled = canCopy;
         UndoMenuItem.IsEnabled = _undoConfiguration.Count > 0;
         RedoMenuItem.IsEnabled = _redoConfiguration.Count > 0;
-        ToggleSelectedEnabledMenuItem.IsEnabled = selected is MacroDefinition or MacroEvent or MacroAction or PluginStartupConfiguration;
+        ToggleSelectedEnabledMenuItem.IsEnabled = selected is MacroGroup or MacroDefinition or MacroEvent or MacroAction or PluginStartupConfiguration;
         PropertiesMenuItem.IsEnabled = selected is MacroGroup or MacroDefinition or MacroEvent or MacroAction ||
                                        selected is PluginStartupConfiguration { CanConfigure: true };
         RenameSelectedMenuItem.IsEnabled = selected is MacroGroup or MacroDefinition or MacroEvent;
         RunSelectedMenuItem.IsEnabled = selected is MacroDefinition or MacroEvent or MacroAction;
         ToggleSelectedEnabledMenuItem.IsChecked = selected switch
         {
+            MacroGroup group => !group.IsEnabled,
             MacroDefinition macro => !macro.IsEnabled,
             MacroEvent macroEvent => !macroEvent.IsEnabled,
             MacroAction action => !action.IsEnabled,
@@ -436,6 +441,9 @@ public partial class MainWindow
             if (item is MacroGroup group)
             {
                 ObserveCollection(group.Macros);
+                ObserveCollection(group.Groups);
+                foreach (var child in group.Groups)
+                    ObserveItem(child);
                 foreach (var macro in group.Macros)
                     ObserveItem(macro);
             }
@@ -455,6 +463,7 @@ public partial class MainWindow
         }
 
         ObserveCollection(MacroGroups);
+        ObserveCollection(_configurationRoot.Groups);
         ObserveCollection(PluginStartups);
         ObserveCollection(StartupActions);
         foreach (var group in MacroGroups)
@@ -689,7 +698,10 @@ public partial class MainWindow
         return selected switch
         {
             MacroGroup group => new ClipboardPayload("Group", group.Name,
-                group.Macros.Select(macro => JsonSerializer.Serialize(macro, JsonOptions)).ToArray()),
+                group.Macros.Select(macro => JsonSerializer.Serialize(macro, JsonOptions)).ToArray(),
+                SourceId: group.Id.ToString(),
+                Groups: group.Groups.Select(child => CreateClipboardPayload(child)!).ToArray(),
+                IsEnabled: group.IsEnabled),
             MacroDefinition macro => new ClipboardPayload("Macro", JsonSerializer.Serialize(macro, JsonOptions)),
             MacroEvent macroEvent => new ClipboardPayload("Event",
                 JsonSerializer.Serialize(new ClipboardEvent(macroEvent.Name, macroEvent.IsEnabled), JsonOptions)),
@@ -765,27 +777,54 @@ public partial class MainWindow
 
     private void PasteGroup(ClipboardPayload payload)
     {
-        var macros = new List<MacroDefinition>();
-        foreach (var macroJson in payload.Children ?? [])
+        var parsedGroups = new List<(ClipboardPayload Payload, List<MacroDefinition> Macros)>();
+        void ReadGroups(ClipboardPayload source)
         {
-            var macro = JsonSerializer.Deserialize<MacroDefinition>(macroJson, JsonOptions)
-                ?? throw new JsonException("Une macro copiée est vide.");
-            macros.Add(macro);
+            if (source.Type != "Group")
+                throw new JsonException("Un sous-groupe copié est invalide.");
+            var groupMacros = new List<MacroDefinition>();
+            foreach (var macroJson in source.Children ?? [])
+                groupMacros.Add(JsonSerializer.Deserialize<MacroDefinition>(macroJson, JsonOptions)
+                    ?? throw new JsonException("Une macro copiée est vide."));
+            parsedGroups.Add((source, groupMacros));
+            foreach (var child in source.Groups ?? [])
+                ReadGroups(child);
         }
+        ReadGroups(payload);
+        var macros = parsedGroups.SelectMany(item => item.Macros).ToList();
+        var groupIds = parsedGroups
+            .Where(item => Guid.TryParse(item.Payload.SourceId, out _))
+            .ToDictionary(item => Guid.Parse(item.Payload.SourceId!), _ => Guid.NewGuid());
         var macroIds = macros.ToDictionary(macro => macro.Id, _ => Guid.NewGuid());
         var actionIds = macros.SelectMany(macro => macro.Actions)
             .ToDictionary(action => action.Id, _ => Guid.NewGuid());
-        var group = new MacroGroup { Name = MakeUniqueGroupName(payload.Value) };
-        MacroGroups.Add(group);
-        foreach (var macro in macros)
+        var nextGroup = 0;
+        MacroGroup CreateGroup(ClipboardPayload source, MacroGroup? parent)
         {
-            macro.Id = macroIds[macro.Id];
-            foreach (var action in macro.Actions)
-                action.Id = actionIds[action.Id];
-            RemapMacroActionTargets(macro, macroIds, actionIds);
-            macro.Name = MakeUniqueMacroName(macro.Name);
-            AddMacroToGroup(macro, group);
+            var groupMacros = parsedGroups[nextGroup++].Macros;
+            var group = new MacroGroup
+            {
+                Id = Guid.TryParse(source.SourceId, out var sourceId) && groupIds.TryGetValue(sourceId, out var newId)
+                    ? newId : Guid.NewGuid(),
+                Name = MakeUniqueGroupName(source.Value),
+                IsEnabled = source.IsEnabled
+            };
+            (parent?.Groups ?? _configurationRoot.Groups).Add(group);
+            SynchronizeGroupOrder();
+            foreach (var macro in groupMacros)
+            {
+                macro.Id = macroIds[macro.Id];
+                foreach (var action in macro.Actions)
+                    action.Id = actionIds[action.Id];
+                RemapMacroActionTargets(macro, macroIds, actionIds, groupIds);
+                macro.Name = MakeUniqueMacroName(macro.Name);
+                AddMacroToGroup(macro, group);
+            }
+            foreach (var child in source.Groups ?? [])
+                CreateGroup(child, group);
+            return group;
         }
+        var group = CreateGroup(payload, GetSelectedMacroGroup());
         SynchronizeMacroOrder();
         RefreshPluginDescriptions(Macros);
         RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
@@ -864,6 +903,11 @@ public partial class MainWindow
             Guid.TryParse(action.Target, out var targetMacroId) && targetMacroId == target.Id &&
             Guid.TryParse(action.Value, out var targetActionId) && targetActionId == sourceActionId)
             action.Value = action.Id.ToString();
+        if (action.Kind is MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem &&
+            action.ActivationTarget == ActivationTargetKind.Action &&
+            string.Equals(action.Target, targetId, StringComparison.OrdinalIgnoreCase) &&
+            Guid.TryParse(action.Value, out var unifiedTargetId) && unifiedTargetId == sourceActionId)
+            action.Value = action.Id.ToString();
         var startupCount = PluginStartups.Count;
         target.Actions.Add(action);
         if (action.Kind == MacroActionKind.Plugin)
@@ -903,12 +947,15 @@ public partial class MainWindow
     }
 
     private static void RemapMacroActionTargets(
-        MacroDefinition macro, IReadOnlyDictionary<Guid, Guid> macroIds, IReadOnlyDictionary<Guid, Guid> actionIds)
+        MacroDefinition macro, IReadOnlyDictionary<Guid, Guid> macroIds, IReadOnlyDictionary<Guid, Guid> actionIds,
+        IReadOnlyDictionary<Guid, Guid>? groupIds = null)
     {
         foreach (var action in macro.Actions)
         {
             if (action.Kind is MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or
                 MacroActionKind.EnableAction or MacroActionKind.DisableAction ||
+                action.Kind is MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem &&
+                action.ActivationTarget is ActivationTargetKind.Macro or ActivationTargetKind.Event or ActivationTargetKind.Action ||
                 action.Kind == MacroActionKind.Jump && action.JumpMode != JumpMode.GotoAction)
             {
                 if (Guid.TryParse(action.Target, out var targetMacroId) &&
@@ -916,12 +963,19 @@ public partial class MainWindow
                     action.Target = mappedMacroId.ToString();
             }
             if (action.Kind is MacroActionKind.EnableAction or MacroActionKind.DisableAction ||
+                action.Kind is MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem &&
+                action.ActivationTarget == ActivationTargetKind.Action ||
                 action.Kind == MacroActionKind.Jump && action.JumpMode == JumpMode.GotoAction)
             {
                 if (Guid.TryParse(action.Value, out var targetActionId) &&
                     actionIds.TryGetValue(targetActionId, out var mappedActionId))
                     action.Value = mappedActionId.ToString();
             }
+            if (action.Kind is MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem &&
+                action.ActivationTarget == ActivationTargetKind.Group && groupIds is not null &&
+                Guid.TryParse(action.Target, out var targetGroupId) &&
+                groupIds.TryGetValue(targetGroupId, out var mappedGroupId))
+                action.Target = mappedGroupId.ToString();
         }
     }
 
