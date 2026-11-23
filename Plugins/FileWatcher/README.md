@@ -6,16 +6,23 @@ Ce plugin surveille un dossier existant et émet des événements quand des él�
 
 ## Configuration
 
-Dans la section **Démarrage**, ajoutez **Surveillance de dossiers**, puis indiquez :
+Dans la section **Démarrage**, ajoutez **Surveillance de dossiers**, puis indiquez le chemin absolu d'un dossier existant, un filtre de nom (par exemple `*.txt` ou `*`) et un préfixe d'événement sans espaces (par exemple `Fichiers.Rapports`). Vous pouvez ajouter plusieurs configurations.
 
-- le chemin absolu d'un dossier existant;
-- un filtre de nom, par exemple `*.txt` ou `*`;
-- un préfixe d'événement sans espaces, par exemple `Fichiers.Rapports`.
+## Actions
 
-Une configuration surveille uniquement le dossier indiqué, pas ses sous-dossiers. Vous pouvez ajouter plusieurs configurations pour surveiller plusieurs dossiers.
+Ce plugin ne fournit pas d'action de macro ; il est configuré dans la section **Démarrage**.
 
 ## Événements
 
-Le plugin émet les événements `<préfixe>.Created`, `<préfixe>.Changed`, `<préfixe>.Deleted` et `<préfixe>.Renamed`. Le payload contient le chemin complet concerné. Pour un renommage, il contient d'abord l'ancien chemin, puis le nouveau, séparés par un saut de ligne.
+| Événement | Payload |
+| --- | --- |
+| `<préfixe>.Created` | Chemin complet de l'élément créé. |
+| `<préfixe>.Changed` | Chemin complet de l'élément modifié. |
+| `<préfixe>.Deleted` | Chemin complet de l'élément supprimé. |
+| `<préfixe>.Renamed` | Ancien chemin puis nouveau chemin, séparés par un saut de ligne. |
 
-Windows peut signaler plusieurs événements `Changed` pour une même opération d'écriture. Le plugin transmet les notifications reçues sans les regrouper. La surveillance s'arrête au rechargement de la configuration ou au redémarrage des plugins.
+## Prérequis et limites
+
+- La surveillance porte uniquement sur le dossier indiqué, pas sur ses sous-dossiers.
+- Windows peut signaler plusieurs événements `Changed` pour une même écriture ; le plugin transmet les notifications sans les regrouper.
+- La surveillance s'arrête au rechargement de la configuration ou au redémarrage des plugins.

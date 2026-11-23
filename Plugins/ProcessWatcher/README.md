@@ -6,12 +6,21 @@ Ce plugin détecte les transitions de présence d'un processus Windows et émet 
 
 ## Configuration
 
-Dans la section **Démarrage**, ajoutez **Surveillance de processus**, puis saisissez le nom du processus (avec ou sans extension `.exe`) et un préfixe d'événement sans espaces. Par exemple, le processus `notepad` avec le préfixe `Process.Notepad`.
+Dans la section **Démarrage**, ajoutez **Surveillance de processus**, puis saisissez le nom du processus (avec ou sans extension `.exe`) et un préfixe d'événement sans espaces. Par exemple, le processus `notepad` avec le préfixe `Process.Notepad`. Vous pouvez ajouter plusieurs configurations.
 
-Vous pouvez ajouter plusieurs configurations pour surveiller différents noms de processus.
+## Actions
 
-## Événements et limites
+Ce plugin ne fournit pas d'action de macro ; il est configuré dans la section **Démarrage**.
 
-Le plugin émet `<préfixe>.Started` lorsqu'aucun processus de ce nom n'était actif et qu'au moins un apparaît, puis `<préfixe>.Stopped` lorsque le dernier disparaît. Le payload contient le nom du processus. Si un processus est déjà actif au démarrage de la surveillance, aucun événement initial n'est émis.
+## Événements
 
-L'état est vérifié toutes les secondes : un processus très bref peut démarrer et se terminer entre deux vérifications sans être détecté. La surveillance s'arrête au rechargement de la configuration ou au redémarrage des plugins.
+| Événement | Quand il est émis | Payload |
+| --- | --- | --- |
+| `<préfixe>.Started` | Lorsqu'un processus apparaît alors qu'aucun processus du même nom n'était actif. | Nom du processus. |
+| `<préfixe>.Stopped` | Lorsque le dernier processus du même nom disparaît. | Nom du processus. |
+
+## Prérequis et limites
+
+- Si un processus est déjà actif au démarrage de la surveillance, aucun événement initial n'est émis.
+- L'état est vérifié toutes les secondes ; un processus très bref peut démarrer et se terminer entre deux vérifications sans être détecté.
+- La surveillance s'arrête au rechargement de la configuration ou au redémarrage des plugins.

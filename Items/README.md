@@ -1,17 +1,17 @@
-# Catalogue des macros, actions et événements système
+# Système
 
-Ce catalogue répertorie les éléments fournis par l’application. Les actions et événements propres à un plugin sont décrits dans le README de ce plugin, disponible dans l’écran **Documentation**.
+Ce document décrit les macros, actions et événements fournis par l’application.
 
-## Macros
+## Configuration
 
-L’application ne fournit pas de bibliothèque de macros système prédéfinies : les macros et leurs déclencheurs sont configurés par l’utilisateur.
+Les macros et leurs déclencheurs sont configurés par l’utilisateur ; il n’existe pas de bibliothèque de macros système prédéfinies.
 
 - **Démarrage** est une séquence spéciale d’actions, distincte des macros. Elle s’exécute au démarrage de l’application et après le chargement ou le rechargement de la configuration, après l’initialisation des plugins actifs.
 - **Bienvenue** est un exemple ajouté à une nouvelle configuration. Il écoute `Demo.Start` et écrit un message dans le journal ; ce n’est pas une macro système.
 
-## Actions système
+## Actions
 
-Ces actions sont proposées dans la catégorie **Système** lors de l’ajout d’une action à une macro ou à la séquence **Démarrage**.
+Les actions système sont proposées lors de l’ajout d’une action à une macro ou à la séquence **Démarrage**.
 
 | Action | Fonction |
 | --- | --- |
@@ -28,18 +28,20 @@ Ces actions sont proposées dans la catégorie **Système** lors de l’ajout d�
 | **Jump** | Appelle une macro puis arrête la séquence courante, appelle une macro puis reprend cette séquence, ou saute à une action de la macro courante. |
 | **If** | Compare le résultat de l’action précédente avec une valeur, sans tenir compte de la casse (`Est égale à`, `Contient`, `Est différente de`). Si la condition est fausse, l’action suivante est sautée. |
 
-Une action désactivée est ignorée. Une macro qui ne possède aucun déclencheur peut tout de même être exécutée manuellement.
-
-## Événements système
+## Événements
 
 Les noms ci-dessous sont émis par l’application. Ils peuvent être ajoutés aux déclencheurs d’une macro ; la comparaison des noms ne tient pas compte de la casse.
 
 | Événement | Moment d’émission |
 | --- | --- |
-| `System.Startup` | Au démarrage de l’application. |
+| `System.Startup` | Au démarrage de l’application, après les actions de démarrage et le chargement de la configuration. |
 | `System.ConfigurationLoaded` | Après le chargement initial ou le rechargement de la configuration. |
-| `System.Show` | Lorsque la commande **Afficher EventGhost** est utilisée depuis l’icône de la zone de notification. |
-| `System.Hide` | Lorsque la commande **Masquer EventGhost** est utilisée depuis l’icône de la zone de notification. |
+| `System.Show` | Lors de l’utilisation de **Afficher EventGhost**, du double-clic sur l’icône de notification ou d’une notification EventGhost. |
+| `System.Hide` | Lors de l’utilisation de **Masquer EventGhost** ou de la fermeture de la fenêtre avec son bouton X. |
 | `System.Exit` | Lorsque la commande **Sortie** est utilisée depuis l’icône de la zone de notification ; les macros correspondantes sont déclenchées avant la demande de fermeture. |
 
-Les événements personnalisés ne sont pas limités à cette liste : l’action **Déclencher un événement** et les plugins peuvent émettre leurs propres noms et payloads.
+## Prérequis et limites
+
+- Une macro ne se déclenche que si elle et ses groupes parents sont actifs et si son événement correspondant est activé. Une macro sans déclencheur reste exécutable manuellement.
+- Une action désactivée est ignorée.
+- Les événements personnalisés ne sont pas limités à cette liste : les actions système et les plugins peuvent émettre leurs propres noms et payloads.

@@ -2,15 +2,21 @@
 
 Identifiant du plugin : `Display`.
 
-Ce plugin fournit l'action **Écran — changer l'entrée** pour sélectionner une source d'entrée sur un moniteur compatible DDC/CI.
+Ce plugin sélectionne une source d'entrée sur un moniteur compatible DDC/CI.
 
-## Utilisation
+## Configuration
 
-1. Ajoutez l'action dans une macro.
-2. Choisissez le moniteur physique dans la liste.
-3. Saisissez la valeur de la source d'entrée en décimal ou en hexadécimal, par exemple `15` ou `0x0F`.
+Ajoutez l'action à une macro, choisissez le moniteur physique dans la liste, puis saisissez la source d'entrée en décimal ou en hexadécimal, par exemple `15` ou `0x0F`. La valeur à saisir est la source demandée, et non le code VCP `0x60`. Consultez la documentation du fabricant pour connaître les valeurs prises en charge.
 
-L'action utilise le code VCP d'entrée `0x60`. La valeur à saisir est la source d'entrée demandée, et non le code VCP. Consultez la documentation du fabricant pour connaître les valeurs prises en charge par le moniteur.
+## Actions
+
+| Action | Fonction |
+| --- | --- |
+| **Écran — changer l'entrée** | Envoie la commande VCP d'entrée `0x60` au moniteur choisi. |
+
+## Événements
+
+Ce plugin n'émet pas d'événement.
 
 ## Prérequis et limites
 
