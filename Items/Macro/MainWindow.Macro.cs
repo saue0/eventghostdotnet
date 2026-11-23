@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using EventGhostDotNet.Core.Macros;
 using EventGhostDotNet.PluginContracts;
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
@@ -242,8 +243,7 @@ public partial class MainWindow
     {
         if (cancellationToken.IsCancellationRequested)
             return;
-        if (callDepth >= MaximumMacroCallDepth)
-            throw new InvalidOperationException($"La profondeur maximale d'appel de macro ({MaximumMacroCallDepth}) est dépassée.");
+        MacroExecutionLimits.EnsureCallDepth(callDepth);
 
         var selectedAction = onlyActionId is Guid selectedActionId
             ? macro.Actions.FirstOrDefault(action => action.Id == selectedActionId)
@@ -268,9 +268,9 @@ public partial class MainWindow
         {
             if (cancellationToken.IsCancellationRequested)
                 break;
-            if (++actionExecutions > MaximumActionExecutionsPerMacro)
+            if (!MacroExecutionLimits.CanExecuteAction(++actionExecutions))
             {
-                WriteLog($"Limite de {MaximumActionExecutionsPerMacro} exécutions d'actions atteinte dans « {macro.Name} ».",
+                WriteLog($"Limite de {MacroExecutionLimits.MaximumActionExecutionsPerMacro} exécutions d'actions atteinte dans « {macro.Name} ».",
                     null, level: LogLevel.Warning, category: LogCategory.Macro, indentLevel: logIndentLevel);
                 break;
             }
@@ -302,9 +302,7 @@ public partial class MainWindow
                         actionContext.Log(action.Value, action.LogLevel ?? LogLevel.Information);
                         break;
                     case MacroActionKind.Delay:
-                        if (!int.TryParse(action.Value, out var milliseconds) || milliseconds is < 0 or > 600000)
-                            throw new InvalidOperationException($"Durée d'attente invalide : {action.Value}");
-                        await Task.Delay(milliseconds, cancellationToken);
+                        await Task.Delay(MacroExecutionLimits.ParseDelay(action.Value), cancellationToken);
                         break;
                     case MacroActionKind.Beep:
                         System.Media.SystemSounds.Beep.Play();
@@ -326,10 +324,9 @@ public partial class MainWindow
                         nextActionIndex = actionIds.Length;
                         break;
                     case MacroActionKind.OpenUrl:
-                        if (!Uri.TryCreate(action.Value, UriKind.Absolute, out var uri) ||
-                            uri.Scheme is not ("http" or "https"))
+                        if (!MacroExecutionLimits.IsAllowedUrl(action.Value, out var uri))
                             throw new InvalidOperationException($"URL non autorisée : {action.Value}");
-                        Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+                        Process.Start(new ProcessStartInfo(uri!.AbsoluteUri) { UseShellExecute = true });
                         break;
                     case MacroActionKind.PowerShell:
                         await RunPowerShellAsync(action.Value, action.UnlimitedExecution, action.UseWindowsPowerShell,
@@ -342,7 +339,7 @@ public partial class MainWindow
                             string.IsNullOrEmpty(action.Value) ? null : action.Value);
                         break;
                     case MacroActionKind.Plugin:
-                        var plugin = _pluginLoader.Find(action.PluginId)
+                        var plugin = _pluginRuntime.Find(action.PluginId)
                             ?? throw new InvalidOperationException($"Plugin introuvable : {action.PluginId}");
                         EnsurePluginActionEnabled(plugin, action);
                         await plugin.ExecuteActionAsync(ResolvePluginAction(plugin, action),

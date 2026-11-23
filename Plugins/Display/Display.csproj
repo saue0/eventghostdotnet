@@ -8,4 +8,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\PluginContracts\PluginContracts.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\PluginHostWindows.cs" Link="PluginHostWindows.cs" />
+  </ItemGroup>
+
 </Project>

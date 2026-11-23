@@ -35,11 +35,11 @@ public sealed class ProcessWatcherModule : IPlugin
         }
         catch (JsonException exception)
         {
-            MessageBox.Show(host.Owner, $"La configuration est invalide.\n{exception.Message}",
+            MessageBox.Show(host.OwnerWindow(), $"La configuration est invalide.\n{exception.Message}",
                 Name, MessageBoxButton.OK, MessageBoxImage.Error);
             return null;
         }
-        var values = StartupConfigurationDialog.Show(host.Owner, Name,
+        var values = StartupConfigurationDialog.Show(host.OwnerWindow(), Name,
             [
                 new("Nom du processus :", settings.ProcessName),
                 new("Préfixe d'événement :", settings.EventPrefix)

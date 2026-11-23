@@ -10,4 +10,8 @@
     <Compile Include="..\Shared\StartupConfigurationDialog.cs" Link="StartupConfigurationDialog.cs" />
     <InternalsVisibleTo Include="Scheduler.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\PluginHostWindows.cs" Link="PluginHostWindows.cs" />
+  </ItemGroup>
+
 </Project>

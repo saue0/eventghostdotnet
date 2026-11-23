@@ -1,3 +1,4 @@
+using EventGhostDotNet.Plugins.Shared;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Globalization;
@@ -73,7 +74,7 @@ public sealed class WallpaperModule : IPlugin
         }
         catch (JsonException exception)
         {
-            WpfMessageBox.Show(host.Owner, $"La configuration de l'action est invalide.\n{exception.Message}",
+            WpfMessageBox.Show(host.OwnerWindow(), $"La configuration de l'action est invalide.\n{exception.Message}",
                 Name, System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             return null;
         }
@@ -81,7 +82,7 @@ public sealed class WallpaperModule : IPlugin
         var dialog = new WpfWindow
         {
             Title = existing is null ? "Configurer le fond d'écran Bing" : "Modifier le fond d'écran Bing",
-            Owner = host.Owner,
+            Owner = host.OwnerWindow(),
             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
             SizeToContent = System.Windows.SizeToContent.WidthAndHeight,
             ResizeMode = System.Windows.ResizeMode.NoResize,
@@ -177,7 +178,7 @@ public sealed class WallpaperModule : IPlugin
         }
         catch (JsonException exception)
         {
-            WpfMessageBox.Show(host.Owner, $"La configuration de l'action est invalide.\n{exception.Message}",
+            WpfMessageBox.Show(host.OwnerWindow(), $"La configuration de l'action est invalide.\n{exception.Message}",
                 "Wallpaper", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
             return null;
         }
@@ -185,7 +186,7 @@ public sealed class WallpaperModule : IPlugin
         var dialog = new WpfWindow
         {
             Title = existing is null ? "Configurer les images locales" : "Modifier les images locales",
-            Owner = host.Owner,
+            Owner = host.OwnerWindow(),
             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
             Width = 700,
             Height = 460,

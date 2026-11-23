@@ -576,8 +576,7 @@ public partial class MainWindow
                 return;
             }
 
-            await _pluginLifecycleGate.WaitAsync();
-            try
+            await using (await _pluginRuntime.EnterAsync())
             {
                 if (_isClosed)
                     return;
@@ -616,10 +615,6 @@ public partial class MainWindow
                     MessageBox.Show(this, exception.Message, "Erreur de démarrage de plugin",
                         MessageBoxButton.OK, MessageBoxImage.Error);
                 }
-            }
-            finally
-            {
-                _pluginLifecycleGate.Release();
             }
             if (restored)
                 WriteLog("Configuration annulée ou rétablie.");

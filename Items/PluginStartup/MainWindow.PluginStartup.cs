@@ -17,7 +17,7 @@ public partial class MainWindow
                 string.Equals(configuration.PluginId, pluginId, StringComparison.OrdinalIgnoreCase)))
             return;
 
-        var plugin = _pluginLoader.Find(pluginId);
+        var plugin = _pluginRuntime.Find(pluginId);
         if (plugin is null)
             return;
         var configuration = plugin.CreateDefaultStartupConfiguration();
@@ -29,7 +29,7 @@ public partial class MainWindow
     {
         foreach (var configuration in PluginStartups)
         {
-            var plugin = _pluginLoader.Find(configuration.PluginId);
+            var plugin = _pluginRuntime.Find(configuration.PluginId);
             if (plugin is null)
             {
                 configuration.DisplayName = $"{configuration.PluginId} — plugin introuvable";
@@ -95,7 +95,7 @@ public partial class MainWindow
 
     private async Task EditPluginStartupAsync(PluginStartupConfiguration configuration)
     {
-        var plugin = _pluginLoader.Find(configuration.PluginId);
+        var plugin = _pluginRuntime.Find(configuration.PluginId);
         if (plugin is null)
         {
             MessageBox.Show(this, $"Plugin introuvable : {configuration.PluginId}", "Plugin indisponible",
@@ -184,7 +184,7 @@ public partial class MainWindow
 
     private IPlugin? PromptForPluginStartupTarget()
     {
-        var plugins = _pluginLoader.Plugins.ToArray();
+        var plugins = _pluginRuntime.Plugins.ToArray();
         if (plugins.Length == 0)
         {
             MessageBox.Show(this, "Aucun plugin n'est chargé.", "Plugin indisponible",

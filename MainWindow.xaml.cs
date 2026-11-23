@@ -20,6 +20,9 @@ using System.Windows.Media.Imaging;
 using System.Windows.Media.Media3D;
 using System.Windows.Interop;
 using Microsoft.VisualBasic;
+using EventGhostDotNet.Core.Configuration;
+using EventGhostDotNet.Core.Logging;
+using EventGhostDotNet.Core.Macros;
 using EventGhostDotNet.PluginContracts;
 using Forms = System.Windows.Forms;
 using Brushes = System.Windows.Media.Brushes;
@@ -52,15 +55,7 @@ public partial class MainWindow : Window
     private const string SystemShowEventName = "System.Show";
     private const string SystemHideEventName = "System.Hide";
     private const string SystemExitEventName = "System.Exit";
-    private const int MaximumMacroCallDepth = 32;
     private const int MaximumLogIndentLevel = 64;
-    private const int MaximumActionExecutionsPerMacro = 10000;
-
-    private enum StartupWindowMode
-    {
-        Show,
-        MinimizeToTray
-    }
 
     private sealed record ActionChoice(
         MacroActionKind Kind, string Name, string? PluginId = null, string? ActionId = null, string? InstanceId = null)
@@ -136,9 +131,11 @@ public partial class MainWindow : Window
             {
                 var run = new Run(segment.Text);
                 if (segment.Foreground is { } foreground)
-                    run.Foreground = new SolidColorBrush(foreground);
+                    run.Foreground = new SolidColorBrush(
+                        System.Windows.Media.Color.FromRgb(foreground.Red, foreground.Green, foreground.Blue));
                 if (segment.Background is { } background)
-                    run.Background = new SolidColorBrush(background);
+                    run.Background = new SolidColorBrush(
+                        System.Windows.Media.Color.FromRgb(background.Red, background.Green, background.Blue));
                 display.Inlines.Add(run);
                 text.Append(segment.Text);
             }
@@ -158,16 +155,6 @@ public partial class MainWindow : Window
     private sealed record IfComparisonChoice(IfComparison Comparison, string Label);
     private sealed record SystemActionResult(
         string Message, ActivationTargetKind Kind, string Target, string Value, bool PreviousState, bool CurrentState);
-
-    private sealed class ConfigurationDocument
-    {
-        public ObservableCollection<PluginStartupConfiguration> PluginStartups { get; set; } = [];
-        public ObservableCollection<MacroAction> StartupActions { get; set; } = [];
-        public ObservableCollection<MacroGroup> MacroGroups { get; set; } = [];
-        public ObservableCollection<MacroDefinition> Macros { get; set; } = [];
-        public bool StartupSectionExpanded { get; set; } = true;
-        public StartupWindowMode StartupWindowMode { get; set; } = StartupWindowMode.Show;
-    }
 
     private sealed record TriggerEvent(string Name, string? Payload, string? SourceId);
 
@@ -217,7 +204,7 @@ public partial class MainWindow : Window
 
     private sealed class PluginHost(MainWindow window, ActionContext context, string? sourceId = null) : IPluginHost
     {
-        public Window Owner => window;
+        public IPluginUserInterface UserInterface { get; } = new PluginUserInterface(window);
         public object? Result
         {
             get => context.Result;
@@ -256,6 +243,26 @@ public partial class MainWindow : Window
         public void RaiseEvent(string name, string? payload) => context.RaiseEventFromSource(name, payload, sourceId);
     }
 
+    private sealed class PluginUserInterface(Window window) : IPluginUserInterface
+    {
+        public object? NativeOwner => window;
+
+        public bool? ShowDialog(object dialog)
+        {
+            if (dialog is not Window wpfDialog)
+                throw new ArgumentException("La boîte de dialogue doit être une fenêtre WPF.", nameof(dialog));
+            wpfDialog.Owner ??= window;
+            return wpfDialog.ShowDialog();
+        }
+
+        public void ShowMessage(string message, string title) =>
+            MessageBox.Show(window, message, title, MessageBoxButton.OK, MessageBoxImage.Information);
+
+        public bool Confirm(string message, string title) =>
+            MessageBox.Show(window, message, title, MessageBoxButton.YesNo, MessageBoxImage.Question,
+                MessageBoxResult.No) == MessageBoxResult.Yes;
+    }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -267,12 +274,12 @@ public partial class MainWindow : Window
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "EventGhostDotNet",
         "configuration.json");
-    private readonly PluginLoader _pluginLoader = new();
+    private readonly ConfigurationStore _configurationStore;
+    private readonly PluginRuntime _pluginRuntime = new();
     private readonly ObservableCollection<EventLogEntry> _logEntries = [];
     private readonly ConditionalWeakTable<ItemsControl, object> _treeConnectorParents = new();
     private ICollectionView? _logView;
     private readonly HashSet<Task> _activeMacroExecutions = [];
-    private readonly SemaphoreSlim _pluginLifecycleGate = new(1, 1);
     private CancellationTokenSource _sessionCancellation = new();
     private string _cleanConfiguration = string.Empty;
     private MacroDefinition? _selectedMacro;
@@ -328,6 +335,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _configurationStore = new ConfigurationStore(_configurationPath, JsonOptions);
         _logView = CollectionViewSource.GetDefaultView(_logEntries);
         _logView.Filter = item => item is EventLogEntry entry && ShouldShowLogEntry(entry);
         LogList.ItemsSource = _logView;
@@ -336,7 +344,7 @@ public partial class MainWindow : Window
         _configurationRoot = new ConfigurationRoot(_startupSection);
         _startupMacro = new MacroDefinition(StartupActions) { Name = "Démarrage" };
         ConfigurationTree.ItemsSource = new[] { _configurationRoot };
-        _pluginLoader.Load(Path.Combine(GetApplicationDirectory(), "Plugins"), WriteLog);
+        _pluginRuntime.Load(Path.Combine(GetApplicationDirectory(), "Plugins"), WriteLog);
         LoadConfiguration();
         if (_startupWindowMode == StartupWindowMode.MinimizeToTray)
         {
@@ -416,8 +424,7 @@ public partial class MainWindow : Window
         EnsureApplicationTrayIcon();
         if (System.Windows.Application.Current is App { NotificationError: { } notificationError })
             WriteLog($"Notifications Windows indisponibles : {notificationError}", LogLevel.Warning);
-        await _pluginLifecycleGate.WaitAsync();
-        try
+        await using (await _pluginRuntime.EnterAsync())
         {
             if (_isClosed)
                 return;
@@ -436,10 +443,6 @@ public partial class MainWindow : Window
                         MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-        finally
-        {
-            _pluginLifecycleGate.Release();
-        }
         if (_isClosed)
             return;
         if (_startupWindowMode == StartupWindowMode.MinimizeToTray && !_showRequestedFromNotification)
@@ -451,21 +454,19 @@ public partial class MainWindow : Window
 
     private async void StopPlugins_Click(object sender, RoutedEventArgs e)
     {
-        await _pluginLifecycleGate.WaitAsync();
         try
         {
-            if (_isClosed)
-                return;
-            await ResetPluginsAsync();
+            await using (await _pluginRuntime.EnterAsync())
+            {
+                if (_isClosed)
+                    return;
+                await ResetPluginsAsync();
+            }
         }
         catch (AggregateException exception)
         {
             if (!_isClosed)
                 MessageBox.Show(this, exception.Message, "Erreur de plugin", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            _pluginLifecycleGate.Release();
         }
     }
 
@@ -499,8 +500,7 @@ public partial class MainWindow : Window
         _exitRequestWait.Unregister(null);
         _exitRequest.Dispose();
         _sessionCancellation.Cancel();
-        await _pluginLifecycleGate.WaitAsync();
-        try
+        await using (await _pluginRuntime.EnterAsync())
         {
             _sessionCancellation.Cancel();
             try
@@ -511,23 +511,9 @@ public partial class MainWindow : Window
             {
                 WriteLog($"Erreur d'arrêt des macros : {exception.Message}", LogLevel.Error);
             }
-            foreach (var plugin in _pluginLoader.Plugins)
-            {
-                try
-                {
-                    await plugin.DisposeAsync();
-                }
-                catch (Exception exception)
-                {
-                    WriteLog($"Erreur de fermeture du plugin {plugin.Id} : {exception.Message}", LogLevel.Error);
-                }
-            }
+            await _pluginRuntime.DisposeAllAsync(WriteLog);
             DisposeApplicationTrayIcon();
             _sessionCancellation.Dispose();
-        }
-        finally
-        {
-            _pluginLifecycleGate.Release();
         }
     }
 
@@ -662,90 +648,39 @@ public partial class MainWindow : Window
         _pluginTrayMenuItems.Clear();
     }
 
-    private async Task ResetPluginsAsync()
-    {
-        var failures = new List<Exception>();
-        foreach (var plugin in _pluginLoader.Plugins)
-        {
-            try
-            {
-                await plugin.ResetAsync();
-            }
-            catch (Exception exception)
-            {
-                WriteLog($"Erreur d'arrêt du plugin {plugin.Id} : {exception.Message}", LogLevel.Error);
-                failures.Add(exception);
-            }
-        }
-        if (failures.Count > 0)
-            throw new AggregateException("Certains plugins n'ont pas pu être arrêtés.", failures);
-        WriteLog("Plugins arrêtés.");
-    }
+    private Task ResetPluginsAsync() => _pluginRuntime.ResetAsync(WriteLog);
 
-    private async Task StartConfiguredPluginsAsync()
-    {
-        var failures = new List<Exception>();
-        foreach (var configuration in PluginStartups.ToArray())
-        {
-            if (!configuration.IsEnabled)
-                continue;
-            var plugin = _pluginLoader.Find(configuration.PluginId);
-            if (plugin is null)
-            {
-                var error = new InvalidOperationException($"Plugin introuvable : {configuration.PluginId}");
-                WriteLog($"Démarrage impossible : {error.Message}", LogLevel.Error);
-                failures.Add(error);
-                continue;
-            }
-
-            try
-            {
-                var sourceId = plugin.DescribeStartup(ToPluginStartupData(configuration));
-                await plugin.StartupAsync(ToPluginStartupData(configuration),
-                    new PluginHost(this, new ActionContext(this, _sessionCancellation.Token, null), sourceId),
-                    _sessionCancellation.Token);
-            }
-            catch (OperationCanceledException) when (_sessionCancellation.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                WriteLog($"Erreur de démarrage du plugin {plugin.Id} : {exception.Message}", LogLevel.Error);
-                failures.Add(exception);
-            }
-        }
-
-        if (failures.Count > 0)
-            throw new AggregateException("Certains plugins n'ont pas pu démarrer.", failures);
-        WriteLog("Démarrage des plugins terminé.");
-    }
+    private Task StartConfiguredPluginsAsync() =>
+        _pluginRuntime.StartConfiguredAsync(
+            PluginStartups,
+            (_, _, sourceId) =>
+                new PluginHost(this, new ActionContext(this, _sessionCancellation.Token, null), sourceId),
+            _sessionCancellation.Token,
+            WriteLog);
 
     private async Task RestartConfiguredPluginsAsync()
     {
-        await _pluginLifecycleGate.WaitAsync();
-        try
+        await using (await _pluginRuntime.EnterAsync())
         {
             if (_isClosed)
                 return;
-            await StartNewSessionAsync();
-            if (_isClosed)
+            try
+            {
+                await StartNewSessionAsync();
+                if (_isClosed)
+                    return;
+                await StartConfiguredPluginsAsync();
+            }
+            catch (OperationCanceledException) when (_isClosed)
+            {
                 return;
-            await StartConfiguredPluginsAsync();
-        }
-        catch (OperationCanceledException) when (_isClosed)
-        {
-            return;
-        }
-        catch (AggregateException exception)
-        {
-            WriteLog($"Erreur de redémarrage des plugins : {exception.Message}", LogLevel.Error);
-            if (!_isClosed)
-                MessageBox.Show(this, exception.Message, "Erreur de plugin", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            _pluginLifecycleGate.Release();
+            }
+            catch (AggregateException exception)
+            {
+                WriteLog($"Erreur de redémarrage des plugins : {exception.Message}", LogLevel.Error);
+                if (!_isClosed)
+                    MessageBox.Show(this, exception.Message, "Erreur de plugin", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
     }
 
@@ -1076,8 +1011,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await _pluginLifecycleGate.WaitAsync();
-        try
+        await using (await _pluginRuntime.EnterAsync())
         {
             if (_isClosed)
                 return;
@@ -1136,10 +1070,6 @@ public partial class MainWindow : Window
                     MessageBox.Show(this, exception.Message, "Erreur de démarrage de plugin",
                         MessageBoxButton.OK, MessageBoxImage.Error);
             }
-        }
-        finally
-        {
-            _pluginLifecycleGate.Release();
         }
         if (_isClosed)
             return;
@@ -1280,7 +1210,7 @@ public partial class MainWindow : Window
             RefreshPluginStartupDescriptions();
             RefreshPluginDescriptions(Macros);
             RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
-            WriteLog(File.Exists(_configurationPath)
+            WriteLog(_configurationStore.Exists
                 ? $"Configuration chargée : {Macros.Count} macro(s)."
                 : "Configuration initiale créée en mémoire. Ajoutez vos macros puis enregistrez.");
         }
@@ -1300,30 +1230,19 @@ public partial class MainWindow : Window
 
     private ConfigurationDocument ReadConfiguration()
     {
-        if (!File.Exists(_configurationPath))
+        if (!_configurationStore.Exists)
         {
             var initialConfiguration = new ConfigurationDocument { Macros = [CreateSampleMacro()] };
             NormalizeMacroGroups(initialConfiguration);
             return initialConfiguration;
         }
 
-        return ReadConfiguration(File.ReadAllText(_configurationPath));
+        return ReadConfiguration(_configurationStore.ReadText());
     }
 
     private ConfigurationDocument ReadConfiguration(string json)
     {
-        using var document = JsonDocument.Parse(json);
-        var configuration = document.RootElement.ValueKind switch
-        {
-            JsonValueKind.Array => new ConfigurationDocument
-            {
-                Macros = JsonSerializer.Deserialize<ObservableCollection<MacroDefinition>>(json, JsonOptions)
-                    ?? throw new JsonException("Le fichier ne contient pas de configuration de macros.")
-            },
-            JsonValueKind.Object => JsonSerializer.Deserialize<ConfigurationDocument>(json, JsonOptions)
-                ?? throw new JsonException("Le fichier ne contient pas de configuration."),
-            _ => throw new JsonException("Le fichier de configuration doit contenir un tableau ou un objet.")
-        };
+        var configuration = _configurationStore.Deserialize(json);
         configuration.PluginStartups ??= [];
         configuration.StartupActions ??= [];
         configuration.MacroGroups ??= [];
@@ -1347,7 +1266,7 @@ public partial class MainWindow : Window
                 MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem or
                 MacroActionKind.Jump or MacroActionKind.If or MacroActionKind.RaiseEvent))
             {
-                var match = _pluginLoader.FindLegacy(action.Kind.ToString());
+                var match = _pluginRuntime.FindLegacy(action.Kind.ToString());
                 if (match is not null)
                 {
                     action.Kind = MacroActionKind.Plugin;
@@ -1360,7 +1279,7 @@ public partial class MainWindow : Window
         EnsurePluginStartupConfigurations(
             configuration.Macros, configuration.PluginStartups, configuration.StartupActions);
         MigratePluginInstances(
-            configuration.Macros, configuration.PluginStartups, _pluginLoader.Plugins, configuration.StartupActions);
+            configuration.Macros, configuration.PluginStartups, _pluginRuntime.Plugins, configuration.StartupActions);
         ValidateEntityIds(configuration.Macros, configuration.StartupActions);
         ValidateStartupConfigurationIds(configuration.PluginStartups);
         RefreshSystemActionDescriptions(configuration.Macros.Append(new MacroDefinition(configuration.StartupActions)
@@ -1527,7 +1446,7 @@ public partial class MainWindow : Window
             if (configurations.Any(configuration =>
                     string.Equals(configuration.PluginId, pluginId, StringComparison.OrdinalIgnoreCase)))
                 continue;
-            if (_pluginLoader.Find(pluginId) is not IPlugin plugin)
+            if (_pluginRuntime.Find(pluginId) is not IPlugin plugin)
                 continue;
             var data = plugin.CreateDefaultStartupConfiguration();
             configurations.Add(CreatePluginStartupConfiguration(plugin, data));
@@ -1612,10 +1531,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_configurationPath)!);
-            var json = SerializeConfiguration();
-            File.WriteAllText(_configurationPath, json);
-            _cleanConfiguration = json;
+            _cleanConfiguration = _configurationStore.Save(CreateConfigurationDocument());
             WriteLog($"Configuration enregistrée : {Macros.Count} macro(s).");
             return true;
         }
@@ -1628,16 +1544,19 @@ public partial class MainWindow : Window
         }
     }
 
-    private string SerializeConfiguration() =>
-        JsonSerializer.Serialize(new ConfigurationDocument
+    private ConfigurationDocument CreateConfigurationDocument() =>
+        new()
         {
+            SchemaVersion = ConfigurationMigrator.CurrentSchemaVersion,
             PluginStartups = PluginStartups,
             StartupActions = StartupActions,
             MacroGroups = MacroGroups,
             Macros = Macros,
             StartupSectionExpanded = _startupSection.IsExpanded,
             StartupWindowMode = _startupWindowMode
-        }, JsonOptions);
+        };
+
+    private string SerializeConfiguration() => _configurationStore.Serialize(CreateConfigurationDocument());
 
     private static MacroDefinition CreateSampleMacro() =>
         new()

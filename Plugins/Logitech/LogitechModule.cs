@@ -1,3 +1,4 @@
+using EventGhostDotNet.Plugins.Shared;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
@@ -102,7 +103,7 @@ public sealed class LogitechModule : IPlugin, IPluginInstanceProvider
         if (compact.Length == 0 || compact.Length > maxLength || compact.Length % 2 != 0 ||
             compact.Any(character => !Uri.IsHexDigit(character)))
         {
-            MessageBox.Show(host.Owner, hostAction
+            MessageBox.Show(host.OwnerWindow(), hostAction
                 ? "L'hôte doit contenir de 1 à 16 octets hexadécimaux."
                 : "Le rapport doit contenir de 1 à 20 octets hexadécimaux.",
                 "Valeur invalide", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -183,17 +184,17 @@ public sealed class LogitechModule : IPlugin, IPluginInstanceProvider
         }
         catch (Exception exception) when (exception is Win32Exception or DllNotFoundException or EntryPointNotFoundException)
         {
-            MessageBox.Show(host.Owner, $"Impossible de rechercher les récepteurs Logitech.\n{exception.Message}",
+            MessageBox.Show(host.OwnerWindow(), $"Impossible de rechercher les récepteurs Logitech.\n{exception.Message}",
                 "Erreur HID", MessageBoxButton.OK, MessageBoxImage.Error);
             return null;
         }
         if (receivers.Count == 0)
         {
-            MessageBox.Show(host.Owner, "Aucun récepteur Logitech Unifying ou Bolt compatible n'a été détecté.",
+            MessageBox.Show(host.OwnerWindow(), "Aucun récepteur Logitech Unifying ou Bolt compatible n'a été détecté.",
                 "Récepteur introuvable", MessageBoxButton.OK, MessageBoxImage.Information);
             return null;
         }
-        var dialog = CreateDialog(host.Owner, "Configurer le récepteur Logitech");
+        var dialog = CreateDialog(host.OwnerWindow(), "Configurer le récepteur Logitech");
         var panel = new StackPanel { Width = 560 };
         panel.Children.Add(new TextBlock { Text = "Récepteur HID :" });
         var selector = new ComboBox
@@ -232,11 +233,11 @@ public sealed class LogitechModule : IPlugin, IPluginInstanceProvider
             .ToList();
         if (targets.Count == 0)
         {
-            MessageBox.Show(host.Owner, "Ajoutez d'abord un démarrage Logitech dans la section « Démarrage ».",
+            MessageBox.Show(host.OwnerWindow(), "Ajoutez d'abord un démarrage Logitech dans la section « Démarrage ».",
                 "Aucun récepteur configuré", MessageBoxButton.OK, MessageBoxImage.Information);
             return null;
         }
-        var dialog = CreateDialog(host.Owner, "Choisir le récepteur Logitech");
+        var dialog = CreateDialog(host.OwnerWindow(), "Choisir le récepteur Logitech");
         var panel = new StackPanel { Width = 560 };
         panel.Children.Add(new TextBlock { Text = "Récepteur associé à cette action :" });
         var selector = new ComboBox

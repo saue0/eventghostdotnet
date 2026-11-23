@@ -14,6 +14,14 @@ Depuis une version publiée, lancez `EventGhostDotNet.exe`.
 
 Dans VS Code, la tâche « Release : arrêter, publier et redémarrer » demande la sortie des instances Release, publie l'application et les plugins dans `bin\live`, puis démarre cette version. La publication Windows x64 nécessite le .NET 9 Desktop Runtime x64 installé sur chaque poste ; Windows App SDK est inclus. Conservez tout le dossier publié, y compris les DLL, les fichiers `.deps.json` des plugins, l'icône et les README. Une confirmation peut être nécessaire si la configuration a été modifiée ; si la fermeture est annulée ou prend plus de 30 secondes, la publication est annulée. Lors de la première utilisation avec une ancienne version ne prenant pas en charge cette demande, quittez-la manuellement depuis la zone de notification puis relancez la tâche.
 
+## Tests
+
+```powershell
+dotnet test Tests\EventGhostDotNet.Core.Tests\EventGhostDotNet.Core.Tests.csproj
+```
+
+Les tests couvrent la logique sans interface de `Core` : journal ANSI, migration et version de la configuration, écriture atomique, manifeste de plugins, règles d'exécution des macros et action `If`. Ils s'exécutent sans Windows ni WPF. La solution `EventGhostDotNet.sln` regroupe l'application, le contrat, les plugins, `Core` et les tests ; la CI les compile et les exécute sur Windows.
+
 ## Fonctions disponibles
 
 - Consulter la configuration en arborescence : chaque macro contient ses événements déclencheurs et sa séquence d'actions. Le journal est affiché à côté et la séparation est redimensionnable.

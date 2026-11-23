@@ -139,7 +139,7 @@ internal static class SchedulerDialogs
         var dialog = new Window
         {
             Title = "Configurer l'action du planificateur",
-            Owner = host.Owner,
+            Owner = host.OwnerWindow(),
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             SizeToContent = SizeToContent.WidthAndHeight,
             ResizeMode = ResizeMode.NoResize,

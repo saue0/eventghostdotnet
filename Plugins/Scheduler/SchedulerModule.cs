@@ -46,7 +46,7 @@ public sealed class SchedulerModule : IPlugin
     public PluginStartupData? ConfigureStartup(PluginStartupData? existing, IPluginHost host)
     {
         var settings = existing is null ? new ScheduleList([]) : ReadSchedules(existing.Value);
-        var updated = SchedulerDialogs.ConfigureSchedules(host.Owner, settings.Schedules);
+        var updated = SchedulerDialogs.ConfigureSchedules(host.OwnerWindow(), settings.Schedules);
         return updated is null ? null : new PluginStartupData(ConfigurationId,
             existing?.InstanceId ?? Guid.NewGuid().ToString(),
             JsonSerializer.Serialize(new ScheduleList(updated)), string.Empty);

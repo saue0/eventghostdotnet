@@ -1,3 +1,4 @@
+using EventGhostDotNet.Plugins.Shared;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -89,7 +90,7 @@ public sealed class SystemTrayMenuModule : IPlugin
     {
         if (existing is null && host.GetPluginStartupConfigurations(Id).Count > 0)
         {
-            WpfMessageBox.Show(host.Owner, "Une configuration System Tray Menu existe déjà.",
+            WpfMessageBox.Show(host.OwnerWindow(), "Une configuration System Tray Menu existe déjà.",
                 Name, MessageBoxButton.OK, MessageBoxImage.Information);
             return null;
         }
@@ -102,12 +103,12 @@ public sealed class SystemTrayMenuModule : IPlugin
         }
         catch (JsonException exception)
         {
-            WpfMessageBox.Show(host.Owner, $"La configuration du menu est invalide.\n{exception.Message}",
+            WpfMessageBox.Show(host.OwnerWindow(), $"La configuration du menu est invalide.\n{exception.Message}",
                 Name, MessageBoxButton.OK, MessageBoxImage.Error);
             return null;
         }
 
-        if (!ShowConfigurationDialog(host.Owner, entries))
+        if (!ShowConfigurationDialog(host.OwnerWindow(), entries))
             return null;
 
         return new PluginStartupData(

@@ -51,7 +51,7 @@ public partial class MainWindow
             new("Application", Path.Combine(GetApplicationDirectory(), "README.md")),
             new("Système", Path.Combine(GetApplicationDirectory(), "Items", "README.md"))
         };
-        documents.AddRange(_pluginLoader.Plugins
+        documents.AddRange(_pluginRuntime.Plugins
             .OrderBy(plugin => plugin.Name, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(plugin => plugin.Id, StringComparer.OrdinalIgnoreCase)
             .Select(plugin =>

@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using EventGhostDotNet.Core.Macros;
 using EventGhostDotNet.PluginContracts;
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
@@ -74,7 +75,7 @@ public partial class MainWindow
 
         if (action.Kind == MacroActionKind.Plugin)
         {
-            var plugin = _pluginLoader.Find(action.PluginId);
+            var plugin = _pluginRuntime.Find(action.PluginId);
             if (plugin is null)
             {
                 MessageBox.Show(this, $"Plugin introuvable : {action.PluginId}", "Plugin indisponible",
@@ -830,7 +831,7 @@ public partial class MainWindow
     private MacroAction? ConfigurePluginAction(
         string pluginId, string actionId, MacroAction? existing, string? instanceId = null)
     {
-        var plugin = _pluginLoader.Find(pluginId);
+        var plugin = _pluginRuntime.Find(pluginId);
         if (plugin is null)
         {
             MessageBox.Show(this, $"Plugin introuvable : {pluginId}", "Plugin indisponible",
@@ -912,7 +913,7 @@ public partial class MainWindow
         foreach (var action in macros.SelectMany(macro => macro.Actions).Concat(StartupActions)
                      .Where(action => action.Kind == MacroActionKind.Plugin))
         {
-            var plugin = _pluginLoader.Find(action.PluginId);
+            var plugin = _pluginRuntime.Find(action.PluginId);
             if (plugin is null)
                 continue;
             try
@@ -961,26 +962,17 @@ public partial class MainWindow
 
     private static bool EvaluateIf(string? previousResult, MacroAction action)
     {
-        if (previousResult is null)
-            return false;
-        return action.IfComparison switch
+        var comparison = action.IfComparison switch
         {
-            IfComparison.Equals => string.Equals(previousResult, action.Value, StringComparison.OrdinalIgnoreCase),
-            IfComparison.Contains => previousResult.Contains(action.Value, StringComparison.OrdinalIgnoreCase),
-            IfComparison.NotEquals => !string.Equals(previousResult, action.Value, StringComparison.OrdinalIgnoreCase),
+            IfComparison.Equals => IfOperator.Equals,
+            IfComparison.Contains => IfOperator.Contains,
+            IfComparison.NotEquals => IfOperator.NotEquals,
             _ => throw new InvalidOperationException("La comparaison de l'action If est invalide.")
         };
+        return MacroConditionEvaluator.Evaluate(previousResult, comparison, action.Value);
     }
 
-    private static string? FormatActionResult(object? result) => result switch
-    {
-        null => null,
-        string value => value,
-        JsonElement { ValueKind: JsonValueKind.String } element => element.GetString(),
-        JsonElement element => element.GetRawText(),
-        IFormattable value => value.ToString(null, CultureInfo.InvariantCulture),
-        _ => result.ToString()
-    };
+    private static string? FormatActionResult(object? result) => MacroValueFormatter.Format(result);
 
     private MacroAction? PromptForScript(MacroAction? existing)
     {
@@ -1361,7 +1353,7 @@ public partial class MainWindow
             new(MacroActionKind.If, "If"),
             new(MacroActionKind.RaiseEvent, "Déclencher un événement")
         };
-        choices.AddRange(CreatePluginActionChoices(_pluginLoader.Plugins, PluginStartups));
+        choices.AddRange(CreatePluginActionChoices(_pluginRuntime.Plugins, PluginStartups));
         choices = choices
             .OrderBy(choice => choice.Source switch
             {

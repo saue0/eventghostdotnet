@@ -1,3 +1,4 @@
+using EventGhostDotNet.Plugins.Shared;
 using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
@@ -25,14 +26,14 @@ public sealed class DisplayModule : IPlugin
         }
         catch (Exception exception) when (exception is Win32Exception or DllNotFoundException or EntryPointNotFoundException)
         {
-            MessageBox.Show(host.Owner, $"Impossible d'énumérer les écrans DDC/CI.\n{exception.Message}",
+            MessageBox.Show(host.OwnerWindow(), $"Impossible d'énumérer les écrans DDC/CI.\n{exception.Message}",
                 "Erreur d'écran", MessageBoxButton.OK, MessageBoxImage.Error);
             return null;
         }
 
         if (monitors.Count == 0)
         {
-            MessageBox.Show(host.Owner, "Aucun écran compatible DDC/CI n'a été détecté.",
+            MessageBox.Show(host.OwnerWindow(), "Aucun écran compatible DDC/CI n'a été détecté.",
                 "Écran introuvable", MessageBoxButton.OK, MessageBoxImage.Information);
             return null;
         }
@@ -40,7 +41,7 @@ public sealed class DisplayModule : IPlugin
         var dialog = new Window
         {
             Title = existing is null ? "Changer l'entrée du moniteur" : "Modifier l'entrée du moniteur",
-            Owner = host.Owner,
+            Owner = host.OwnerWindow(),
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             SizeToContent = SizeToContent.WidthAndHeight,
             ResizeMode = ResizeMode.NoResize,

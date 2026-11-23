@@ -1,11 +1,10 @@
-using System.IO;
 using System.Reflection;
 using System.Runtime.Loader;
 using EventGhostDotNet.PluginContracts;
 
-namespace EventGhostDotNet;
+namespace EventGhostDotNet.Core.Plugins;
 
-internal sealed class PluginLoader
+public sealed class PluginLoader
 {
     private sealed class PluginLoadContext(string path) : AssemblyLoadContext
     {
@@ -31,17 +30,33 @@ internal sealed class PluginLoader
 
     public void Load(string directory, Action<string, LogLevel> log)
     {
+        ArgumentNullException.ThrowIfNull(log);
         if (!Directory.Exists(directory))
         {
             log($"Dossier des plugins introuvable : {directory}", LogLevel.Warning);
             return;
         }
 
-        foreach (var path in Directory.EnumerateFiles(directory, "*.dll", SearchOption.AllDirectories))
+        IReadOnlyList<string> assemblies;
+        try
         {
-            if (string.Equals(Path.GetFileName(path), typeof(IPlugin).Assembly.GetName().Name + ".dll",
-                    StringComparison.OrdinalIgnoreCase))
+            assemblies = PluginManifest.ResolveAssemblyPaths(directory);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            log($"Impossible de lire la liste des plugins : {exception.Message}", LogLevel.Error);
+            return;
+        }
+
+        foreach (var path in assemblies)
+        {
+            if (IsContractAssembly(path))
                 continue;
+            if (!File.Exists(path))
+            {
+                log($"Assembly de plugin introuvable : {path}", LogLevel.Warning);
+                continue;
+            }
             try
             {
                 var context = new PluginLoadContext(path);
@@ -56,6 +71,10 @@ internal sealed class PluginLoader
             }
         }
     }
+
+    private static bool IsContractAssembly(string path) =>
+        string.Equals(Path.GetFileName(path), typeof(IPlugin).Assembly.GetName().Name + ".dll",
+            StringComparison.OrdinalIgnoreCase);
 
     private void LoadPlugin(Type type, Action<string, LogLevel> log)
     {

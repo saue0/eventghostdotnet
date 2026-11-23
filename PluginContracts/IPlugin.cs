@@ -1,5 +1,3 @@
-using System.Windows;
-
 namespace EventGhostDotNet.PluginContracts;
 
 public sealed record PluginActionData(string ActionId, string Value, string Target);
@@ -38,9 +36,26 @@ public interface IActionContext
     void RaiseEvent(string name, string? payload);
 }
 
+/// <summary>
+/// Services d'interface fournis aux plugins. Le contrat ne référence pas WPF :
+/// l'application fournit une implémentation WPF et un hôte de test peut fournir une implémentation inerte.
+/// </summary>
+public interface IPluginUserInterface
+{
+    /// <summary>Fenêtre native de l'application, ou <c>null</c> pour un hôte sans interface.</summary>
+    object? NativeOwner { get; }
+
+    /// <summary>Affiche une boîte de dialogue modale et retourne son résultat, ou <c>null</c> si elle a été annulée.</summary>
+    bool? ShowDialog(object dialog);
+
+    void ShowMessage(string message, string title);
+
+    bool Confirm(string message, string title);
+}
+
 public interface IPluginHost : IActionContext
 {
-    Window Owner { get; }
+    IPluginUserInterface UserInterface { get; }
     IReadOnlyList<PluginActionData> GetConfiguredActions(string pluginId);
     IReadOnlyList<PluginStartupData> GetPluginStartupConfigurations(string pluginId) => [];
     void SetTrayMenuItems(string pluginId, IReadOnlyList<PluginTrayMenuItem> items) { }

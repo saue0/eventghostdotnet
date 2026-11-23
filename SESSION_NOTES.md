@@ -1,43 +1,54 @@
 # Notes de reprise — EventGhostDotNet
 
-Ce fichier résume l'état du projet pour reprendre le travail dans VS Code ou une future session Copilot. Il ne s'agit pas d'une transcription de la conversation.
+Résumé de l'état du projet pour reprendre le travail dans VS Code ou une future session. Ce fichier décrit le code réel, pas l'historique de la conversation.
 
 ## Projet
 
-- Dossier : `C:\Saue0\Projets\eventghostdotnet`
-- Application Windows WPF, cible `net9.0-windows`.
-- Construire depuis le dossier du projet avec `dotnet build`.
-- Lancer avec `dotnet run`.
-- Les macros sont enregistrées dans `%LOCALAPPDATA%\EventGhostDotNet\configuration.json`.
+- Application Windows WPF, cible `net9.0-windows10.0.19041.0`, `Microsoft.WindowsAppSDK` 2.7.0, WebView2, Markdig.
+- Ouvrir `EventGhostDotNet.sln` (application, contrats, plugins intégrés, cœur testable, tests).
+- Construire et lancer : `dotnet build EventGhostDotNet.sln`, puis `dotnet run --project EventGhostDotNet.csproj`.
+- Configuration utilisateur : `%LOCALAPPDATA%\EventGhostDotNet\configuration.json`, sauvegarde précédente dans `configuration.json.bak`.
 
-## Fonctions présentes
+## Organisation
 
-- Macros avec événement déclencheur et séquence d'actions.
-- Actions standard, scripts PowerShell, changement d'entrée d'écran DDC/CI, contrôle HID Logitech.
-- L'écoute Logitech se démarre avec l'action `LogitechStart` d'une macro; le récepteur et le préfixe des événements sont configurés sur cette action (par défaut `Logitech`).
+| Projet | Rôle |
+| --- | --- |
+| `EventGhostDotNet.csproj` | Fenêtre principale (partials `MainWindow.*`), modèles `Items/`, persistance, moteur de macros. |
+| `Core/` | Logique pure sans WPF : formatage ANSI, migration et version de schéma, écriture atomique, manifeste et chargeur de plugins, règles d'exécution des macros, action `If`. |
+| `PluginContracts/` | Contrat `IPlugin` / `IPluginHost`, cible `net9.0` **sans WPF**. |
+| `Plugins/` | Plugins intégrés (Display, FileWatcher, Logitech, ProcessWatcher, Scheduler, SystemTrayMenu, Wallpaper) et `Shared/`. |
+| `Tests/EventGhostDotNet.Core.Tests` | Tests xunit du projet `Core` (exécutables sans Windows). |
 
-## Équivalences des plugins étudiés
+Services extraits de `MainWindow` :
 
-- `C:\ProgramData\EventGhost\plugins\Display`: changement d'entrée via VCP `0x60`, implémenté par les API DDC/CI Windows dans `Plugins/Display/DisplayPlugin.cs`. Le binaire tiers `ControlMyMonitor.exe` n'est pas utilisé.
-- `C:\ProgramData\EventGhost\plugins\LogitechUnify`: découverte des interfaces HID C52B/C548, écoute des événements de touches et de batterie, reconnexion, changement d'hôte et envoi de rapport brut.
-- Chaque action `LogitechStart` peut démarrer un récepteur distinct; les actions de commande sélectionnent le récepteur visé. La communication avec le matériel doit être validée sur les appareils visés avant usage régulier.
+- `ConfigurationStore` : normalisation du JSON, sérialisation, écriture atomique (`Core.Storage.AtomicFile`).
+- `PluginRuntime` : chargement, verrou de cycle de vie (`EnterAsync`), démarrage, arrêt, libération des plugins.
+- `ConfigurationDocument` : forme sérialisée, avec `SchemaVersion`.
 
-## Fichiers principaux
+## Configuration
 
-- `MainWindow.xaml` — interface.
-- `MainWindow.xaml.cs` — macros, actions et intégration des modules de plugins.
-- `Plugins/Display` — module Display et API Windows DDC/CI.
-- `Plugins/Logitech` — module Logitech et client HID.
-- `PluginContracts` et `PluginLoader.cs` — contrat et découverte des DLL de plugins.
-- `Models.cs` — modèle sérialisé des macros/actions.
-- `README.md` — démarrage et résumé des capacités.
+- Le JSON contient `SchemaVersion` (constante `ConfigurationMigrator.CurrentSchemaVersion`).
+- `ConfigurationMigrator.Normalize` accepte l'ancien format à racine tableau, convertit les événements `EGDN.*` en `System.*` et estampille la version avant désérialisation.
+- Les migrations qui dépendent des plugins (anciennes actions `LogitechStart`, association des instances) restent dans `MainWindow.xaml.cs`.
+- L'enregistrement passe par un fichier temporaire puis `File.Replace`, avec `configuration.json.bak` en secours.
 
-Chaque plugin ajouté est une DLL de confiance implémentant `IPlugin` et placée dans un sous-dossier de `Plugins` à côté de l'exécutable.
+## Plugins
 
-Les événements de cycle de vie `EGDN.ConfigurationLoaded` et `EGDN.Startup` sont déclenchés après le chargement initial. Le menu Fichier permet de recharger le JSON; cette opération annule les macros en cours, libère les clients Logitech et remplace les macros en mémoire avant `EGDN.ConfigurationLoaded`.
+- Le contrat ne référence plus WPF : les plugins WPF récupèrent la fenêtre hôte via `host.UserInterface.NativeOwner` (extension `OwnerWindow()` dans `Plugins/Shared/PluginHostWindows.cs`).
+- `host.UserInterface` expose aussi `ShowDialog`, `ShowMessage` et `Confirm`.
+- Le chargeur lit `Plugins/plugins.manifest` (une DLL par ligne, chemins relatifs). Sans manifeste, il retombe sur la convention `Plugins/<Nom>/<Nom>.dll` et les DLL à la racine de `Plugins`, sans scan récursif des dépendances.
+- Le manifeste est généré par les cibles `CopyBuiltInPlugins` et `PublishBuiltInPlugins`. Un plugin ajouté à la main dans une version publiée doit être ajouté au manifeste, ou le manifeste doit être supprimé pour revenir à la convention.
 
-## Dernière validation
+## Vérifications
 
-- `dotnet build --no-restore` a réussi sans avertissements ni erreurs.
-- Test local : 3 écrans DDC/CI et 2 récepteurs Logitech détectés; ouverture puis fermeture d'un handle HID réussie.
-- Aucun changement d'entrée d'écran ni rapport HID de commande n'a été envoyé pendant le test.
+- `dotnet restore EventGhostDotNet.csproj -p:EnableWindowsTargeting=true` : OK.
+- Sous Linux, la compilation complète échoue uniquement sur l'outil Windows `MakePri.exe` (`Exec format error`) : le C# est compilé, la génération PRI doit se faire sur Windows.
+- `dotnet test Tests/EventGhostDotNet.Core.Tests/EventGhostDotNet.Core.Tests.csproj` : tests du cœur, sans WPF.
+- La CI `.github/workflows/ci.yml` compile la solution et exécute les tests sur `windows-latest`.
+
+## Points ouverts
+
+- `MainWindow` reste volumineux (~6 000 lignes de partials) : l'orchestration des macros est encore dans la fenêtre, seules ses règles pures sont dans `Core`.
+- Aucun test d'intégration WPF : les plugins et l'interface ne sont vérifiés que par compilation.
+- Les DLL de plugins sont chargées dans des `AssemblyLoadContext` qui ne sont jamais déchargés.
+- `ToDo.md` : minuterie multiple et niveau d'indentation initial du journal.

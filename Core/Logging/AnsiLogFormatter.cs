@@ -1,30 +1,34 @@
 using System.Text.RegularExpressions;
-using Color = System.Windows.Media.Color;
 
-namespace EventGhostDotNet;
+namespace EventGhostDotNet.Core.Logging;
 
-internal sealed record AnsiLogRun(string Text, Color? Foreground, Color? Background);
+public sealed record AnsiLogRun(string Text, AnsiColor? Foreground, AnsiColor? Background);
 
-internal sealed class AnsiLogFormatter
+/// <summary>
+/// Convertit les séquences SGR ANSI d'un message en segments colorés.
+/// L'état des couleurs est conservé d'un appel à l'autre, comme dans un terminal.
+/// </summary>
+public sealed class AnsiLogFormatter
 {
     private static readonly Regex SgrSequence = new(@"\x1b\[([0-9;]*)m", RegexOptions.CultureInvariant);
-    private static readonly Color[] Palette =
+    private static readonly AnsiColor[] Palette =
     [
-        Color.FromRgb(12, 12, 12), Color.FromRgb(197, 15, 31),
-        Color.FromRgb(19, 161, 14), Color.FromRgb(193, 156, 0),
-        Color.FromRgb(0, 55, 218), Color.FromRgb(136, 23, 152),
-        Color.FromRgb(58, 150, 221), Color.FromRgb(204, 204, 204),
-        Color.FromRgb(118, 118, 118), Color.FromRgb(231, 72, 86),
-        Color.FromRgb(22, 198, 12), Color.FromRgb(249, 241, 165),
-        Color.FromRgb(59, 120, 255), Color.FromRgb(180, 0, 158),
-        Color.FromRgb(97, 214, 214), Color.FromRgb(242, 242, 242)
+        AnsiColor.FromRgb(12, 12, 12), AnsiColor.FromRgb(197, 15, 31),
+        AnsiColor.FromRgb(19, 161, 14), AnsiColor.FromRgb(193, 156, 0),
+        AnsiColor.FromRgb(0, 55, 218), AnsiColor.FromRgb(136, 23, 152),
+        AnsiColor.FromRgb(58, 150, 221), AnsiColor.FromRgb(204, 204, 204),
+        AnsiColor.FromRgb(118, 118, 118), AnsiColor.FromRgb(231, 72, 86),
+        AnsiColor.FromRgb(22, 198, 12), AnsiColor.FromRgb(249, 241, 165),
+        AnsiColor.FromRgb(59, 120, 255), AnsiColor.FromRgb(180, 0, 158),
+        AnsiColor.FromRgb(97, 214, 214), AnsiColor.FromRgb(242, 242, 242)
     ];
 
-    private Color? _foreground;
-    private Color? _background;
+    private AnsiColor? _foreground;
+    private AnsiColor? _background;
 
     public IReadOnlyList<AnsiLogRun> Parse(string text)
     {
+        ArgumentNullException.ThrowIfNull(text);
         var runs = new List<AnsiLogRun>();
         var position = 0;
         foreach (Match match in SgrSequence.Matches(text))
@@ -92,7 +96,7 @@ internal sealed class AnsiLogFormatter
         }
     }
 
-    private static Color? ReadExtendedColor(int[] codes, ref int index)
+    private static AnsiColor? ReadExtendedColor(int[] codes, ref int index)
     {
         if (index + 1 >= codes.Length)
             return null;
@@ -108,24 +112,24 @@ internal sealed class AnsiLogFormatter
             var green = codes[++index];
             var blue = codes[++index];
             return red is >= 0 and <= 255 && green is >= 0 and <= 255 && blue is >= 0 and <= 255
-                ? Color.FromRgb((byte)red, (byte)green, (byte)blue)
+                ? AnsiColor.FromRgb((byte)red, (byte)green, (byte)blue)
                 : null;
         }
         index = codes.Length;
         return null;
     }
 
-    private static Color IndexedColor(int index)
+    private static AnsiColor IndexedColor(int index)
     {
         if (index < Palette.Length)
             return Palette[index];
         if (index >= 232)
         {
             var gray = (byte)(8 + (index - 232) * 10);
-            return Color.FromRgb(gray, gray, gray);
+            return AnsiColor.FromRgb(gray, gray, gray);
         }
         var cube = index - 16;
         static byte Component(int value) => (byte)(value == 0 ? 0 : 55 + value * 40);
-        return Color.FromRgb(Component(cube / 36), Component(cube / 6 % 6), Component(cube % 6));
+        return AnsiColor.FromRgb(Component(cube / 36), Component(cube / 6 % 6), Component(cube % 6));
     }
 }
