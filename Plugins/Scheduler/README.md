@@ -21,7 +21,7 @@ Dans **Démarrage**, ajoutez ou modifiez **Planificateur**. Une configuration co
 | **Macro différée** | Exécute la macro sélectionnée après un délai, sans bloquer la macro courante. |
 | **Compte à rebours** | Émet un événement et son payload à la fin du délai. |
 | **Minuterie répétitive** | Émet un événement et son payload à chaque intervalle, jusqu'à son annulation. |
-| **Annuler une tâche planifiée** | Annule une tâche en cours à partir de son identifiant. |
+| **Annuler une tâche planifiée** | Annule toutes les tâches actives portant l'identifiant indiqué. |
 
 ## Événements
 
@@ -31,7 +31,7 @@ Les planifications et les actions **Événement différé**, **Compte à rebours
 
 - Le plugin et l'application doivent être actifs. Une occurrence manquée n'est pas rejouée ; une configuration activée pendant sa minute prévue ne déclenche pas cette occurrence.
 - Les délais des tâches sont exprimés en secondes, de 1 à 2 000 000.
-- Chaque tâche active doit avoir un identifiant unique, sans distinction de casse ; une deuxième tâche portant le même identifiant est refusée. L'annulation d'un identifiant absent est signalée dans le journal.
+- Plusieurs minuteries peuvent être actives en même temps, y compris avec le même identifiant : elles s'exécutent alors en parallèle. L'identifiant est comparé sans distinction de casse. **Annuler une tâche planifiée** arrête toutes les tâches actives portant cet identifiant ; l'annulation d'un identifiant absent est signalée dans le journal.
 - Une macro supprimée ou désactivée ne sera pas exécutée par **Macro différée** ; l'erreur est inscrite dans le journal. Si la macro a déjà commencé, l'annulation de la tâche demande aussi l'arrêt de son exécution.
 - Les tâches sont temporaires : elles sont annulées à la fermeture ou au rechargement de la configuration et ne sont pas reprises au redémarrage.
 - Pour suspendre la macro courante avant de continuer, utilisez plutôt l'action intégrée **Attendre**.

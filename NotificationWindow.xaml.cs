@@ -14,8 +14,7 @@ public partial class NotificationWindow : Window
     {
         InitializeComponent();
         Key = key;
-        TitleText.Text = title;
-        MessageText.Text = message;
+        SetContent(title, message);
 
         _timer = new DispatcherTimer(Lifetime, DispatcherPriority.Background, (_, _) => Dismiss(), Dispatcher);
         _timer.Stop();
@@ -37,9 +36,20 @@ public partial class NotificationWindow : Window
         BeginAnimation(OpacityProperty, null);
         Opacity = 1;
         _closing = false;
-        TitleText.Text = title;
-        MessageText.Text = message;
+        SetContent(title, message);
         RestartTimer();
+    }
+
+    /// <summary>La fenêtre suit la hauteur du contenu, sans ligne vide résiduelle.</summary>
+    private void SetContent(string title, string message)
+    {
+        var normalizedTitle = title.TrimEnd();
+        var normalizedMessage = message.TrimEnd();
+        TitleText.Text = normalizedTitle;
+        MessageText.Text = normalizedMessage;
+        TitleText.Visibility = string.IsNullOrWhiteSpace(normalizedTitle) ? Visibility.Collapsed : Visibility.Visible;
+        MessageText.Visibility = string.IsNullOrWhiteSpace(normalizedMessage) ? Visibility.Collapsed : Visibility.Visible;
+        MessageText.Margin = TitleText.Visibility == Visibility.Visible ? new Thickness(0, 3, 0, 0) : new Thickness(0);
     }
 
     private void RestartTimer()

@@ -24,8 +24,7 @@ public partial class MainWindow
         string eventName,
         string? payload,
         CancellationToken? sessionToken = null,
-        string? sourceId = null,
-        int logIndentLevel = 0)
+        string? sourceId = null)
     {
         var cancellationToken = sessionToken ?? _sessionCancellation.Token;
         if (cancellationToken.IsCancellationRequested)
@@ -66,8 +65,10 @@ public partial class MainWindow
                 .Where(macro => CanTriggerFromEvent(macro, eventName))
                 .ToList();
             var detail = string.IsNullOrWhiteSpace(payload) ? string.Empty : $" — {payload}";
+            // Chaque événement est une racine du journal, même lorsqu'il est émis depuis une action :
+            // sa ligne et la macro qu'il déclenche repartent au niveau zéro.
             WriteLog($"Événement reçu : {eventName}{detail} — {matchingMacros.Count} macro(s) correspondante(s).",
-                eventName, indentLevel: logIndentLevel);
+                eventName);
             foreach (var macro in matchingMacros)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -77,7 +78,7 @@ public partial class MainWindow
                 ExpandMacroForEvent(macro);
                 await ExecuteMacroInSessionAsync(macro, cancellationToken,
                     triggerEvent: new TriggerEvent(eventName, payload, sourceId),
-                    logIndentLevel: NextLogIndentLevel(logIndentLevel));
+                    logIndentLevel: 1);
             }
             if (exitAfterEvent && !cancellationToken.IsCancellationRequested)
             {

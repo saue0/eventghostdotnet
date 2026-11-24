@@ -198,8 +198,7 @@ public partial class MainWindow : Window
 
         public void RaiseEventFromSource(string name, string? payload, string? sourceId) =>
             window.Dispatcher.BeginInvoke(
-                new Action(() => _ = window.DispatchEventAsync(name, payload, sessionToken, sourceId,
-                    logIndentLevel ?? 0)));
+                new Action(() => _ = window.DispatchEventAsync(name, payload, sessionToken, sourceId)));
     }
 
     private sealed class PluginHost(MainWindow window, ActionContext context, string? sourceId = null) : IPluginHost

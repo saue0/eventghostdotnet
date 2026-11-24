@@ -7,7 +7,8 @@ using Microsoft.Win32;
 namespace EventGhostDotNet;
 
 /// <summary>Notification affichée pendant la session, conservée pour l'historique.</summary>
-public sealed record NotificationHistoryEntry(string Title, string Message, DateTimeOffset Timestamp)
+public sealed record NotificationHistoryEntry(
+    string Title, string Message, DateTimeOffset Timestamp, string? Key = null)
 {
     public string Time => Timestamp.ToString("HH:mm:ss");
 }
@@ -57,7 +58,7 @@ internal sealed class NotificationService : IDisposable
             is { } existing)
         {
             existing.UpdateContent(title, message);
-            Remember(title, message);
+            Remember(title, message, normalizedKey);
             Reposition();
             return;
         }
@@ -75,9 +76,27 @@ internal sealed class NotificationService : IDisposable
             Reposition();
         };
         _windows.Add(window);
-        Remember(title, message);
+        Remember(title, message, normalizedKey);
         window.Show();
         Reposition();
+    }
+
+    /// <summary>Retire une entrée de l'historique de la session.</summary>
+    public void Remove(NotificationHistoryEntry entry)
+    {
+        if (!_dispatcher.CheckAccess())
+        {
+            _dispatcher.BeginInvoke(() => Remove(entry));
+            return;
+        }
+
+        // Les fenêtres travaillent sur les mêmes instances : la première correspondance
+        // par référence est l'entrée affichée, même si un doublon de valeur existe.
+        var index = _history.FindIndex(candidate => ReferenceEquals(candidate, entry));
+        if (index < 0)
+            index = _history.IndexOf(entry);
+        if (index >= 0)
+            _history.RemoveAt(index);
     }
 
     public void CloseAll()
@@ -103,17 +122,26 @@ internal sealed class NotificationService : IDisposable
 
     private void OnDisplaySettingsChanged(object? sender, EventArgs e) => _dispatcher.BeginInvoke(Reposition);
 
-    private void Remember(string title, string message)
+    private void Remember(string title, string message, string? key)
     {
-        // Une notification répétée ne doit pas saturer l'historique : seule
+        // Une notification de même clé écrase la précédente : sans cela, une
+        // notification mise à jour laisserait deux entrées dans l'historique.
+        var index = key is null
+            ? -1
+            : _history.FindLastIndex(entry => string.Equals(entry.Key, key, StringComparison.Ordinal));
+        // Une notification répétée sans clé ne doit pas saturer l'historique : seule
         // l'heure de la dernière occurrence est mise à jour.
-        if (_history.Count > 0 && _history[^1].Title == title && _history[^1].Message == message)
+        if (index < 0 && _history.Count > 0 &&
+            _history[^1].Title == title && _history[^1].Message == message)
+            index = _history.Count - 1;
+
+        if (index >= 0)
         {
-            _history[^1] = new NotificationHistoryEntry(title, message, DateTimeOffset.Now);
+            _history[index] = new NotificationHistoryEntry(title, message, DateTimeOffset.Now, key);
             return;
         }
 
-        _history.Add(new NotificationHistoryEntry(title, message, DateTimeOffset.Now));
+        _history.Add(new NotificationHistoryEntry(title, message, DateTimeOffset.Now, key));
         if (_history.Count > MaxHistory)
             _history.RemoveAt(0);
     }

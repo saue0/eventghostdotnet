@@ -4,9 +4,10 @@
         xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
         Title="Historique des notifications"
         Width="480"
-        Height="420"
         MinWidth="360"
-        MinHeight="260"
+        MinHeight="220"
+        MaxHeight="460"
+        SizeToContent="Height"
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
         Background="#F7F9FC">
@@ -15,7 +16,7 @@
                    Margin="0,0,0,10"
                    TextWrapping="Wrap"
                    Foreground="#475467"
-                   Text="Notifications de cette session. Cliquez sur une entrée pour afficher EventGhost."/>
+                   Text="Notifications de cette session. Cliquez sur une entrée pour afficher EventGhost ; ✕ retire une entrée de l'historique."/>
         <StackPanel DockPanel.Dock="Bottom"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
@@ -33,24 +34,35 @@
                  PreviewMouseLeftButtonUp="HistoryList_PreviewMouseLeftButtonUp">
             <ListBox.ItemTemplate>
                 <DataTemplate>
-                    <StackPanel Margin="4,6">
-                        <DockPanel>
-                            <TextBlock DockPanel.Dock="Right"
-                                       Margin="8,0,0,0"
-                                       FontSize="11"
-                                       Foreground="#98A2B3"
-                                       Text="{Binding Time}"/>
+                    <DockPanel Margin="4,4">
+                        <Button DockPanel.Dock="Right"
+                                Margin="6,0,0,0"
+                                Width="20"
+                                Height="20"
+                                Padding="0"
+                                Focusable="False"
+                                ToolTip="Retirer de l'historique"
+                                Content="✕"
+                                Click="Remove_Click"/>
+                        <TextBlock DockPanel.Dock="Right"
+                                   Margin="8,2,0,0"
+                                   VerticalAlignment="Top"
+                                   FontSize="11"
+                                   Foreground="#98A2B3"
+                                   Text="{Binding Time}"/>
+                        <StackPanel>
                             <emoji:TextBlock FontWeight="SemiBold"
                                              Foreground="#202938"
                                              TextTrimming="CharacterEllipsis"
                                              Text="{Binding Title}"/>
-                        </DockPanel>
-                        <emoji:TextBlock Margin="0,2,0,0"
-                                         MaxHeight="80"
-                                         TextWrapping="Wrap"
-                                         Foreground="#475467"
-                                         Text="{Binding Message}"/>
-                    </StackPanel>
+                            <emoji:TextBlock Margin="0,2,0,0"
+                                             MaxHeight="80"
+                                             TextWrapping="Wrap"
+                                             TextTrimming="CharacterEllipsis"
+                                             Foreground="#475467"
+                                             Text="{Binding Message}"/>
+                        </StackPanel>
+                    </DockPanel>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>

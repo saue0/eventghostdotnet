@@ -153,7 +153,7 @@ internal static class SchedulerDialogs
             panel.Children.Add(box);
             return box;
         }
-        var idBox = AddText("Identifiant unique de la tâche :", id);
+        var idBox = AddText("Identifiant de la tâche (plusieurs minuteries peuvent le partager) :", id);
         TextBox? secondsBox = null;
         TextBox? eventBox = null;
         TextBox? payloadBox = null;

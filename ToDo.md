@@ -12,9 +12,9 @@
 
 ## Priorité 2 — Backlog existant
 
-- [ ] **Minuterie multiple** — supporter plus d'un seul timer dans le plugin scheduler.
-- [ ] **LOG indentation** — Tous les events parte au niveau zéro pour l'indentation.
-- [ ] **Historique des Notification** — Une notification avec la meme clé écrase la précedente, avoir la possibilité de retirer une notification de l'historique, ajuster la hauteur de la notification au minimum possible et avoir un max raisonnable
+- [x] **Minuterie multiple** — plusieurs minuteries peuvent être actives en même temps dans le plugin scheduler, y compris sous le même identifiant : elles s'exécutent en parallèle et « Annuler une tâche planifiée » les arrête toutes. *(SchedulerModule.cs — S)*
+- [x] **LOG indentation** — tous les événements partent au niveau zéro : un événement émis depuis une action n'hérite plus de l'indentation de cette action, sa ligne est une racine du journal et la macro déclenchée démarre au niveau 1. *(MainWindow.MacroEvent.cs — S)*
+- [x] **Historique des Notification** — une notification de même clé écrase son entrée dans l'historique (et non seulement la bulle affichée), chaque entrée peut être retirée avec ✕, et la fenêtre s'ajuste à son contenu entre 220 et 460 px ; les bulles masquent un titre ou un message vide, retirent les espaces de fin et plafonnent le message à 140 px avec une ellipse. *(NotificationService.cs, NotificationHistoryWindow.xaml, NotificationWindow.xaml.cs — S/M)*
 
 ## Priorité 3 — intégration Windows
 

@@ -49,6 +49,7 @@ public partial class App : Application
     {
         var notifications = _notifications ??= new NotificationService(Dispatcher);
         var window = new NotificationHistoryWindow(notifications.History.ToArray(),
+            entry => notifications.Remove(entry),
             () => (MainWindow as MainWindow)?.ShowFromNotification());
         if (MainWindow is { IsVisible: true } owner)
         {

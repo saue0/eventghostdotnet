@@ -12,7 +12,7 @@ public sealed class SchedulerModule : IPlugin
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly StartupTaskGroup _schedules = new();
     private readonly object _jobLock = new();
-    private readonly Dictionary<string, Job> _jobs = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<Job>> _jobs = new(StringComparer.OrdinalIgnoreCase);
 
     internal sealed record Schedule(string Kind, string Time, string Days, string Date, int IdleSeconds, string EventName);
     internal sealed record ScheduleList(List<Schedule> Schedules);
@@ -114,28 +114,35 @@ public sealed class SchedulerModule : IPlugin
         cancellationToken.ThrowIfCancellationRequested();
         if (action.ActionId == "Cancel")
         {
+            Job[] jobs;
             lock (_jobLock)
             {
-                if (!_jobs.TryGetValue(settings.Id, out var job))
+                if (!_jobs.Remove(settings.Id, out var entries))
                     throw new InvalidOperationException($"Tâche planifiée introuvable : {settings.Id}.");
-                job.Cancellation.Cancel();
+                jobs = entries.ToArray();
             }
-            host.Log($"Annulation demandée pour la tâche « {settings.Id} ».");
+            foreach (var job in jobs)
+                job.Cancellation.Cancel();
+            host.Log(jobs.Length == 1
+                ? $"Annulation demandée pour la tâche « {settings.Id} »."
+                : $"Annulation demandée pour {jobs.Length} tâches « {settings.Id} ».");
             return Task.CompletedTask;
         }
 
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var entry = new Job(cancellation);
+        int parallelCount;
         lock (_jobLock)
         {
-            if (!_jobs.TryAdd(settings.Id, entry))
-            {
-                cancellation.Dispose();
-                throw new InvalidOperationException($"Une tâche nommée « {settings.Id} » est déjà active.");
-            }
+            if (!_jobs.TryGetValue(settings.Id, out var entries))
+                _jobs[settings.Id] = entries = [];
+            entries.Add(entry);
+            parallelCount = entries.Count;
         }
         _ = RunJobAsync(action.ActionId, settings, entry, host);
-        host.Log($"Tâche « {settings.Id} » planifiée dans {settings.Seconds} seconde(s).");
+        host.Log(parallelCount == 1
+            ? $"Tâche « {settings.Id} » planifiée dans {settings.Seconds} seconde(s)."
+            : $"Tâche « {settings.Id} » planifiée dans {settings.Seconds} seconde(s) ({parallelCount} en parallèle).");
         return Task.CompletedTask;
     }
 
@@ -144,10 +151,11 @@ public sealed class SchedulerModule : IPlugin
         Job[] jobs;
         lock (_jobLock)
         {
-            jobs = _jobs.Values.ToArray();
-            foreach (var job in jobs)
-                job.Cancellation.Cancel();
+            jobs = _jobs.Values.SelectMany(entries => entries).ToArray();
+            _jobs.Clear();
         }
+        foreach (var job in jobs)
+            job.Cancellation.Cancel();
         await Task.WhenAll(_schedules.StopAsync(), Task.WhenAll(jobs.Select(job => job.Completion.Task)));
     }
 
@@ -178,7 +186,12 @@ public sealed class SchedulerModule : IPlugin
         {
             lock (_jobLock)
             {
-                _jobs.Remove(settings.Id);
+                if (_jobs.TryGetValue(settings.Id, out var entries))
+                {
+                    entries.Remove(entry);
+                    if (entries.Count == 0)
+                        _jobs.Remove(settings.Id);
+                }
                 entry.Cancellation.Dispose();
             }
             entry.Completion.TrySetResult();
