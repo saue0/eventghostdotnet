@@ -83,7 +83,7 @@ public partial class MainWindow : Window
         private string _text = string.Empty;
 
         public EventLogEntry(DateTime timestamp, string message, string? eventName, AnsiLogFormatter formatter,
-            LogLevel level, LogCategory category, int indentLevel, string? payload = null)
+            LogLevel level, LogCategory category, int indentLevel, string? payload = null, string? sourceId = null)
         {
             var (symbol, label, color) = level switch
             {
@@ -103,12 +103,14 @@ public partial class MainWindow : Window
             LevelColor = color;
             EventName = eventName;
             Payload = payload;
+            SourceId = sourceId;
             Level = level;
             RefreshDisplay(showTime: true, dateStamp: false, indent: false);
         }
 
         public string? EventName { get; }
         public string? Payload { get; }
+        public string? SourceId { get; }
         public LogLevel Level { get; }
         public LogCategory Category => _category;
         private System.Windows.Media.Brush LevelColor { get; }
@@ -1682,10 +1684,11 @@ public partial class MainWindow : Window
 
     private void WriteLog(
         string message, string? eventName, AnsiLogFormatter? formatter = null, LogLevel level = LogLevel.Information,
-        LogCategory category = LogCategory.General, int indentLevel = 0, string? payload = null)
+        LogCategory category = LogCategory.General, int indentLevel = 0, string? payload = null,
+        string? sourceId = null)
     {
         var entry = new EventLogEntry(DateTime.Now, message, eventName, formatter ?? new AnsiLogFormatter(),
-            level, category, indentLevel, payload);
+            level, category, indentLevel, payload, sourceId);
         entry.RefreshDisplay(ShowLogTimeMenuItem.IsChecked == true,
             DateStampLogMenuItem.IsChecked == true, IndentLogMenuItem.IsChecked == true);
         _logEntries.Add(entry);

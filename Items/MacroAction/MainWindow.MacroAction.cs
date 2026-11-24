@@ -1225,11 +1225,15 @@ public partial class MainWindow
 
             await outputTask;
             var errors = await errorTask;
-            if (!string.IsNullOrWhiteSpace(errors))
-                foreach (var line in errors.Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries))
-                    context.Log($"PowerShell stderr : {line}");
+            var errorLines = string.IsNullOrWhiteSpace(errors)
+                ? Array.Empty<string>()
+                : errors.Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in errorLines)
+                context.Log($"PowerShell stderr : {line}");
             if (process.ExitCode != 0)
-                throw new InvalidOperationException($"PowerShell s'est terminé avec le code {process.ExitCode}.");
+                throw new InvalidOperationException(errorLines.Length == 0
+                    ? $"PowerShell s'est terminé avec le code {process.ExitCode}."
+                    : $"PowerShell s'est terminé avec le code {process.ExitCode} : {errorLines[0]}");
         }
         finally
         {

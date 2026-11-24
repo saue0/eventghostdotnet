@@ -68,7 +68,7 @@ public partial class MainWindow
             // Chaque événement est une racine du journal, même lorsqu'il est émis depuis une action :
             // sa ligne et la macro qu'il déclenche repartent au niveau zéro.
             WriteLog($"Événement reçu : {eventName}{detail} — {matchingMacros.Count} macro(s) correspondante(s).",
-                eventName, payload: payload);
+                eventName, payload: payload, sourceId: sourceId);
             foreach (var macro in matchingMacros)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -237,7 +237,7 @@ public partial class MainWindow
         if (GetSelectedLogEvent() is not { EventName: { } eventName } entry)
             return;
 
-        await DispatchEventAsync(eventName, entry.Payload);
+        await DispatchEventAsync(eventName, entry.Payload, sourceId: entry.SourceId);
     }
 
     private string? GetSelectedEventName() => GetSelectedLogEvent()?.EventName;
