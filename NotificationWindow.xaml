@@ -14,8 +14,8 @@
         WindowStartupLocation="Manual"
         Cursor="Hand">
     <Border Margin="10"
-            Background="White"
-            BorderBrush="#D7DDE6"
+            Background="{DynamicResource ControlBackgroundBrush}"
+            BorderBrush="{DynamicResource ControlBorderBrush}"
             BorderThickness="1"
             CornerRadius="10"
             Padding="14,12">
@@ -36,13 +36,13 @@
                 <emoji:TextBlock x:Name="TitleText"
                                  FontWeight="SemiBold"
                                  TextTrimming="CharacterEllipsis"
-                                 Foreground="#202938"/>
+                                 Foreground="{DynamicResource PrimaryTextBrush}"/>
                 <emoji:TextBlock x:Name="MessageText"
                                  Margin="0,3,0,0"
                                  MaxHeight="140"
                                  TextWrapping="Wrap"
                                  TextTrimming="CharacterEllipsis"
-                                 Foreground="#475467"/>
+                                 Foreground="{DynamicResource SecondaryTextBrush}"/>
             </StackPanel>
         </Grid>
     </Border>

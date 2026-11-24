@@ -28,6 +28,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        Theme.AppTheme.Apply();
 
         _singleInstance = SingleInstanceGuard.TryAcquire(() =>
             Dispatcher.BeginInvoke(new Action(() => (MainWindow as MainWindow)?.ShowFromNotification())));

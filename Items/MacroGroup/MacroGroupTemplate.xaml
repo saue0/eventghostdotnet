@@ -5,7 +5,7 @@
     <HierarchicalDataTemplate DataType="{x:Type local:MacroGroup}" ItemsSource="{Binding TreeChildren}">
         <StackPanel Orientation="Horizontal">
             <ContentControl Style="{DynamicResource ConfigurationItemIcon}" Tag="&#xE8B7;"
-                            IsEnabled="{Binding IsEnabled}" Foreground="#B7791F"
+                            IsEnabled="{Binding IsEnabled}" Foreground="{DynamicResource WarningTextBrush}"
                             AutomationProperties.Name="État du groupe"/>
             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </StackPanel>

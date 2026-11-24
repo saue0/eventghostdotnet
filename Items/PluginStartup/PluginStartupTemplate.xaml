@@ -5,7 +5,7 @@
     <DataTemplate DataType="{x:Type local:PluginStartupConfiguration}">
         <StackPanel Orientation="Horizontal">
             <ContentControl Style="{DynamicResource ConfigurationItemIcon}" Tag="&#xEA86;"
-                            IsEnabled="{Binding IsEnabled}" Foreground="#466586"
+                            IsEnabled="{Binding IsEnabled}" Foreground="{DynamicResource SectionTextBrush}"
                             AutomationProperties.Name="État du démarrage du plugin"/>
             <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
         </StackPanel>

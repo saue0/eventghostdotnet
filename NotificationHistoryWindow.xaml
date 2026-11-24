@@ -10,12 +10,12 @@
         SizeToContent="Height"
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner"
-        Background="#F7F9FC">
+        Background="{DynamicResource WindowBackgroundBrush}">
     <DockPanel Margin="14">
         <TextBlock DockPanel.Dock="Top"
                    Margin="0,0,0,10"
                    TextWrapping="Wrap"
-                   Foreground="#475467"
+                   Foreground="{DynamicResource SecondaryTextBrush}"
                    Text="Notifications de cette session. Cliquez sur une entrée pour afficher EventGhost ; ✕ retire une entrée de l'historique."/>
         <StackPanel DockPanel.Dock="Bottom"
                     Orientation="Horizontal"
@@ -28,8 +28,8 @@
                     Click="Close_Click"/>
         </StackPanel>
         <ListBox x:Name="HistoryList"
-                 Background="White"
-                 BorderBrush="#D7DDE6"
+                 Background="{DynamicResource ControlBackgroundBrush}"
+                 BorderBrush="{DynamicResource ControlBorderBrush}"
                  HorizontalContentAlignment="Stretch"
                  PreviewMouseLeftButtonUp="HistoryList_PreviewMouseLeftButtonUp">
             <ListBox.ItemTemplate>
@@ -48,18 +48,18 @@
                                    Margin="8,2,0,0"
                                    VerticalAlignment="Top"
                                    FontSize="11"
-                                   Foreground="#98A2B3"
+                                   Foreground="{DynamicResource MutedTextBrush}"
                                    Text="{Binding Time}"/>
                         <StackPanel>
                             <emoji:TextBlock FontWeight="SemiBold"
-                                             Foreground="#202938"
+                                             Foreground="{DynamicResource PrimaryTextBrush}"
                                              TextTrimming="CharacterEllipsis"
                                              Text="{Binding Title}"/>
                             <emoji:TextBlock Margin="0,2,0,0"
                                              MaxHeight="80"
                                              TextWrapping="Wrap"
                                              TextTrimming="CharacterEllipsis"
-                                             Foreground="#475467"
+                                             Foreground="{DynamicResource SecondaryTextBrush}"
                                              Text="{Binding Message}"/>
                         </StackPanel>
                     </DockPanel>

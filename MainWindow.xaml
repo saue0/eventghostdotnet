@@ -5,7 +5,7 @@
         Title="EventGhost .NET" Height="720" Width="1100" Loaded="Window_Loaded" Closing="Window_Closing"
         Closed="Window_Closed"
         MinHeight="540" MinWidth="800"
-        Background="#F0F0F0" Foreground="#1F1F1F"
+        Background="{DynamicResource WindowBackgroundBrush}" Foreground="{DynamicResource PrimaryTextBrush}"
         FontFamily="Segoe UI" FontSize="12" PreviewKeyDown="Window_PreviewKeyDown">
     <Window.Resources>
         <ResourceDictionary>
@@ -31,11 +31,11 @@
                 <Setter Property="BorderBrush" Value="Transparent"/>
                 <Style.Triggers>
                     <Trigger Property="IsMouseOver" Value="True">
-                        <Setter Property="Background" Value="#E3EAF2"/>
-                        <Setter Property="BorderBrush" Value="#8AAAC8"/>
+                        <Setter Property="Background" Value="{DynamicResource HoverBackgroundBrush}"/>
+                        <Setter Property="BorderBrush" Value="{DynamicResource AccentSoftBorderBrush}"/>
                     </Trigger>
                     <Trigger Property="IsPressed" Value="True">
-                        <Setter Property="Background" Value="#D2E2F1"/>
+                        <Setter Property="Background" Value="{DynamicResource SelectionBackgroundBrush}"/>
                     </Trigger>
                 </Style.Triggers>
             </Style>
@@ -52,11 +52,11 @@
                                            Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center"
                                            VerticalAlignment="Center"/>
                                 <Border x:Name="DisabledOverlay" Width="12" Height="12" CornerRadius="6"
-                                        Background="White" BorderBrush="#D92D20" BorderThickness="1"
+                                        Background="{DynamicResource ControlBackgroundBrush}" BorderBrush="{DynamicResource ErrorTextBrush}" BorderThickness="1"
                                         HorizontalAlignment="Right" VerticalAlignment="Bottom"
                                         Visibility="Collapsed">
                                     <TextBlock Text="×" FontFamily="Segoe UI" FontSize="10" FontWeight="Bold"
-                                               Foreground="#D92D20" HorizontalAlignment="Center"
+                                               Foreground="{DynamicResource ErrorTextBrush}" HorizontalAlignment="Center"
                                                VerticalAlignment="Center"/>
                                 </Border>
                             </Grid>
@@ -81,12 +81,6 @@
                 </Style.Triggers>
             </Style>
             <Style TargetType="TreeViewItem">
-                <Style.Resources>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#DBEAFE"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1D4ED8"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#DBEAFE"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1D4ED8"/>
-                </Style.Resources>
                 <Setter Property="IsExpanded" Value="True"/>
                 <Setter Property="Padding" Value="4,3"/>
                 <Setter Property="Margin" Value="0"/>
@@ -117,18 +111,18 @@
                                                          SnapsToDevicePixels="True"/>
                                 <ToggleButton x:Name="Expander" Grid.Column="0" Width="14" Height="14"
                                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Background="White" BorderThickness="0" Padding="0" Focusable="False"
+                                              Background="{DynamicResource ControlBackgroundBrush}" BorderThickness="0" Padding="0" Focusable="False"
                                               IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
                                     <ToggleButton.Template>
                                         <ControlTemplate TargetType="ToggleButton">
-                                            <Border x:Name="ToggleBorder" Width="9" Height="9" Background="White"
-                                                    BorderBrush="#707070" BorderThickness="1" SnapsToDevicePixels="True">
+                                            <Border x:Name="ToggleBorder" Width="9" Height="9" Background="{DynamicResource ControlBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource ControlBorderBrush}" BorderThickness="1" SnapsToDevicePixels="True">
                                                 <Grid>
                                                     <TextBlock x:Name="Plus" Text="+" FontFamily="Segoe UI"
-                                                               FontSize="8" Foreground="#303030"
+                                                               FontSize="8" Foreground="{DynamicResource PrimaryTextBrush}"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                     <TextBlock x:Name="Minus" Text="-" FontFamily="Segoe UI"
-                                                               FontSize="8" Foreground="#303030"
+                                                               FontSize="8" Foreground="{DynamicResource PrimaryTextBrush}"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                Visibility="Collapsed"/>
                                                 </Grid>
@@ -139,8 +133,8 @@
                                                     <Setter TargetName="Minus" Property="Visibility" Value="Visible"/>
                                                 </Trigger>
                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="ToggleBorder" Property="Background" Value="#F0F4F8"/>
-                                                    <Setter TargetName="ToggleBorder" Property="BorderBrush" Value="#404040"/>
+                                                    <Setter TargetName="ToggleBorder" Property="Background" Value="{DynamicResource HoverBackgroundBrush}"/>
+                                                    <Setter TargetName="ToggleBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
@@ -162,11 +156,11 @@
                                     <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
                                 </Trigger>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="HeaderBorder" Property="Background" Value="#F0F4F8"/>
+                                    <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource HoverBackgroundBrush}"/>
                                 </Trigger>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter TargetName="HeaderBorder" Property="Background" Value="#D7E8F7"/>
-                                    <Setter Property="Foreground" Value="#1F1F1F"/>
+                                    <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource SelectionBackgroundBrush}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource SelectionTextBrush}"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -174,13 +168,13 @@
                 </Setter>
             </Style>
             <DataTemplate x:Key="ActionChoiceGroupHeaderTemplate">
-                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="#466586"
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{DynamicResource SectionTextBrush}"
                            Margin="0,5,0,2"/>
             </DataTemplate>
             <HierarchicalDataTemplate DataType="{x:Type local:ConfigurationRoot}" ItemsSource="{Binding Children}">
                 <StackPanel Orientation="Horizontal">
                     <ContentControl Style="{StaticResource ConfigurationItemIcon}" Tag="&#xE770;"
-                                    Foreground="#466586" AutomationProperties.Name="Configuration"/>
+                                    Foreground="{DynamicResource SectionTextBrush}" AutomationProperties.Name="Configuration"/>
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
             </HierarchicalDataTemplate>
@@ -188,7 +182,7 @@
     </Window.Resources>
 
     <DockPanel>
-        <Menu DockPanel.Dock="Top" Background="#F0F0F0">
+        <Menu DockPanel.Dock="Top" Background="{DynamicResource WindowBackgroundBrush}">
             <MenuItem Header="_Fichier">
                 <MenuItem Header="_Enregistrer" Click="SaveConfiguration_Click"/>
                 <MenuItem Header="_Recharger la configuration" Click="ReloadConfiguration_Click"/>
@@ -273,8 +267,8 @@
             </MenuItem>
         </Menu>
 
-        <ToolBarTray x:Name="MainToolBarTray" DockPanel.Dock="Top" Background="#F0F0F0">
-            <ToolBar Background="#F0F0F0" BorderBrush="#C8C8C8" BorderThickness="0,0,0,1">
+        <ToolBarTray x:Name="MainToolBarTray" DockPanel.Dock="Top" Background="{DynamicResource WindowBackgroundBrush}">
+            <ToolBar Background="{DynamicResource WindowBackgroundBrush}" BorderBrush="{DynamicResource ControlBorderBrush}" BorderThickness="0,0,0,1">
                 <Button Style="{StaticResource ToolbarButton}" Content="&#xE74E;" Click="SaveConfiguration_Click"
                         ToolTip="Enregistrer la configuration" AutomationProperties.Name="Enregistrer la configuration"/>
                 <Button Style="{StaticResource ToolbarButton}" Content="&#xE72C;" Click="ReloadConfiguration_Click"
@@ -292,12 +286,12 @@
             </ToolBar>
         </ToolBarTray>
 
-        <StatusBar DockPanel.Dock="Bottom" Background="#F0F0F0" BorderBrush="#B8B8B8" BorderThickness="0,1,0,0">
+        <StatusBar DockPanel.Dock="Bottom" Background="{DynamicResource WindowBackgroundBrush}" BorderBrush="{DynamicResource ControlBorderBrush}" BorderThickness="0,1,0,0">
             <StatusBarItem>
                 <TextBlock x:Name="StatusText" Text="Moteur prêt — les événements peuvent déclencher les macros associées."/>
             </StatusBarItem>
             <StatusBarItem HorizontalAlignment="Right">
-                <TextBlock x:Name="ConfigurationPathText" Foreground="#687386"/>
+                <TextBlock x:Name="ConfigurationPathText" Foreground="{DynamicResource SecondaryTextBrush}"/>
             </StatusBarItem>
         </StatusBar>
 
@@ -386,16 +380,16 @@
                 </DockPanel>
             </Border>
 
-            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="#D0D0D0"
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="{DynamicResource ControlBorderBrush}"
                           ShowsPreview="False"/>
 
-            <Border Grid.Column="2" Background="White" BorderBrush="#A8A8A8" BorderThickness="1">
+            <Border Grid.Column="2" Background="{DynamicResource ControlBackgroundBrush}" BorderBrush="{DynamicResource ControlBorderBrush}" BorderThickness="1">
                 <DockPanel>
-                    <Border DockPanel.Dock="Top" Background="#E8E8E8" BorderBrush="#C8C8C8" BorderThickness="0,0,0,1"
+                    <Border DockPanel.Dock="Top" Background="{DynamicResource HoverBackgroundBrush}" BorderBrush="{DynamicResource ControlBorderBrush}" BorderThickness="0,0,0,1"
                             Padding="7,5">
                         <TextBlock Text="Configuration" FontWeight="SemiBold"/>
                     </Border>
-                    <TreeView x:Name="ConfigurationTree" Background="White" BorderThickness="0"
+                    <TreeView x:Name="ConfigurationTree" Background="{DynamicResource ControlBackgroundBrush}" BorderThickness="0"
                               SelectedItemChanged="ConfigurationTree_SelectedItemChanged"
                               ScrollViewer.HorizontalScrollBarVisibility="Auto"
                               ContextMenuOpening="ConfigurationTree_ContextMenuOpening"

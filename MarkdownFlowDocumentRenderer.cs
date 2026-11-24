@@ -3,14 +3,15 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Documents;
+using System.Windows.Media;
 using System.Windows.Navigation;
 using Markdig;
 using Markdig.Extensions.Tables;
 using Markdig.Helpers;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using Application = System.Windows.Application;
 using Brush = System.Windows.Media.Brush;
-using Color = System.Windows.Media.Color;
 using DocumentList = System.Windows.Documents.List;
 using DocumentTable = System.Windows.Documents.Table;
 using DocumentTableCell = System.Windows.Documents.TableCell;
@@ -20,7 +21,7 @@ using ListItem = System.Windows.Documents.ListItem;
 using MarkdigTable = Markdig.Extensions.Tables.Table;
 using MarkdigTableCell = Markdig.Extensions.Tables.TableCell;
 using MarkdigTableRow = Markdig.Extensions.Tables.TableRow;
-using SolidColorBrush = System.Windows.Media.SolidColorBrush;
+using SystemColors = System.Windows.SystemColors;
 
 namespace EventGhostDotNet;
 
@@ -33,10 +34,15 @@ internal static class MarkdownFlowDocumentRenderer
 {
     private static readonly FontFamily BodyFont = new("Segoe UI");
     private static readonly FontFamily CodeFont = new("Consolas");
-    private static readonly Brush BodyBrush = new SolidColorBrush(Color.FromRgb(0x20, 0x20, 0x20));
-    private static readonly Brush MutedBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));
-    private static readonly Brush CodeBackground = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
-    private static readonly Brush RuleBrush = new SolidColorBrush(Color.FromRgb(0xBB, 0xBB, 0xBB));
+    // Les pinceaux sont résolus au moment du rendu : la documentation suit le thème clair,
+    // sombre ou à contraste élevé appliqué aux ressources de l'application.
+    private static Brush BodyBrush => ThemeBrush("PrimaryTextBrush", SystemColors.WindowTextBrush);
+    private static Brush MutedBrush => ThemeBrush("SecondaryTextBrush", SystemColors.GrayTextBrush);
+    private static Brush CodeBackground => ThemeBrush("CodeBackgroundBrush", SystemColors.ControlBrush);
+    private static Brush RuleBrush => ThemeBrush("RuleBrush", SystemColors.ActiveBorderBrush);
+
+    private static Brush ThemeBrush(string key, Brush fallback) =>
+        Application.Current?.TryFindResource(key) as Brush ?? fallback;
 
     public static FlowDocument Render(string markdown, string? baseDirectory)
     {

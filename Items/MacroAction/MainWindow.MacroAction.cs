@@ -995,7 +995,7 @@ public partial class MainWindow
         var warning = new TextBlock
         {
             Text = "Le script s'exécute avec les droits de l'application. N'utilisez que du code de confiance.",
-            Foreground = Brushes.DarkRed,
+            Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("ErrorTextBrush", Brushes.DarkRed),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 10)
         };

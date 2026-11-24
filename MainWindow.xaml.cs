@@ -1149,7 +1149,7 @@ public partial class MainWindow : Window
         panel.Children.Add(new TextBlock
         {
             Text = "Cette préférence est enregistrée avec la configuration.",
-            Foreground = Brushes.Gray,
+            Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 12)
         });
@@ -1164,7 +1164,7 @@ public partial class MainWindow : Window
         {
             Text = "L'application est alors lancée minimisée dans la zone de notification " +
                    @"(valeur EventGhostDotNet dans HKCU\Software\Microsoft\Windows\CurrentVersion\Run).",
-            Foreground = Brushes.Gray,
+            Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 12)
         });

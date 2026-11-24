@@ -447,7 +447,7 @@ public partial class MainWindow
         panel.Children.Add(new TextBlock
         {
             Text = "Sans événement, la macro peut être exécutée manuellement.",
-            Foreground = Brushes.Gray,
+            Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
             Margin = new Thickness(0, 0, 0, 5)
         });
         var eventList = new ListBox { ItemsSource = eventNames, Height = 100 };

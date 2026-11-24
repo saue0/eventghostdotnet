@@ -5,7 +5,7 @@
     <HierarchicalDataTemplate DataType="{x:Type local:StartupSection}" ItemsSource="{Binding Children}">
         <StackPanel Orientation="Horizontal">
             <ContentControl Style="{DynamicResource ConfigurationItemIcon}" Tag="&#xE80F;"
-                            Foreground="#466586" AutomationProperties.Name="Démarrage"/>
+                            Foreground="{DynamicResource SectionTextBrush}" AutomationProperties.Name="Démarrage"/>
             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </StackPanel>
     </HierarchicalDataTemplate>

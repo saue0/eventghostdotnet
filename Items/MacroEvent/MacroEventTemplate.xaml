@@ -5,9 +5,9 @@
     <DataTemplate DataType="{x:Type local:MacroEvent}">
         <StackPanel Orientation="Horizontal">
             <ContentControl Style="{DynamicResource ConfigurationItemIcon}" Tag="&#xE945;"
-                            IsEnabled="{Binding IsEnabled}" Foreground="#B7791F"
+                            IsEnabled="{Binding IsEnabled}" Foreground="{DynamicResource WarningTextBrush}"
                             AutomationProperties.Name="État de l'événement"/>
-            <TextBlock VerticalAlignment="Center" Foreground="#466586"
+            <TextBlock VerticalAlignment="Center" Foreground="{DynamicResource SectionTextBrush}"
                        Text="{Binding Name, StringFormat=Événement : {0}}"/>
         </StackPanel>
     </DataTemplate>

@@ -5,7 +5,7 @@
     <DataTemplate DataType="{x:Type local:MacroAction}">
         <StackPanel Orientation="Horizontal">
             <ContentControl Style="{DynamicResource ActionItemIcon}"
-                            IsEnabled="{Binding IsEnabled}" Foreground="#466586"
+                            IsEnabled="{Binding IsEnabled}" Foreground="{DynamicResource SectionTextBrush}"
                             AutomationProperties.Name="État de l'action"/>
             <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
         </StackPanel>

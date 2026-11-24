@@ -92,6 +92,7 @@ public partial class MainWindow
             IsToolBarVisible = false,
             Document = MarkdownFlowDocumentRenderer.RenderMessage("Sélectionnez un document.")
         };
+        content.SetResourceReference(FlowDocumentScrollViewer.BackgroundProperty, "WindowBackgroundBrush");
         Grid.SetColumn(content, 1);
         columns.Children.Add(list);
         columns.Children.Add(content);

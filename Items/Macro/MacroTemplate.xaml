@@ -5,7 +5,7 @@
     <HierarchicalDataTemplate DataType="{x:Type local:MacroDefinition}" ItemsSource="{Binding TreeChildren}">
         <StackPanel Orientation="Horizontal">
             <ContentControl Style="{DynamicResource ConfigurationItemIcon}" Tag="&#xE713;"
-                            IsEnabled="{Binding IsEnabled}" Foreground="#2F6F9F"
+                            IsEnabled="{Binding IsEnabled}" Foreground="{DynamicResource MacroTextBrush}"
                             AutomationProperties.Name="État de la macro"/>
             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </StackPanel>
