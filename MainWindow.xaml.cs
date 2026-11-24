@@ -1399,6 +1399,41 @@ public partial class MainWindow : Window
         dialog.ShowDialog();
     }
 
+    private async void CheckForUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        var result = await UpdateService.CheckAsync();
+        if (result.Error is not null)
+        {
+            MessageBox.Show(this, result.Error, "Vérification des mises à jour",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (!result.IsUpdateAvailable)
+        {
+            MessageBox.Show(this, $"Vous utilisez la version {result.Current}, qui est à jour.",
+                "Vérification des mises à jour", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var answer = MessageBox.Show(this,
+            $"La version {result.Latest} est disponible (version actuelle : {result.Current}).\n\n" +
+            "Ouvrir la page de téléchargement ?",
+            "Mise à jour disponible", MessageBoxButton.YesNo, MessageBoxImage.Information);
+        if (answer != MessageBoxResult.Yes || result.DownloadUrl is not { Length: > 0 } url)
+            return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        {
+            MessageBox.Show(this, $"Impossible d'ouvrir la page de téléchargement.\n{exception.Message}",
+                "Vérification des mises à jour", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     private void About_Click(object sender, RoutedEventArgs e)
     {
         MessageBox.Show(this,

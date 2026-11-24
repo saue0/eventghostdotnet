@@ -74,7 +74,8 @@ internal static class AppTheme
     {
         try
         {
-            return Registry.GetValue(PersonalizeKey, "AppsUseLightTheme", 1) is int light && light == 0;
+            using var key = Registry.CurrentUser.OpenSubKey(PersonalizeKey);
+            return key?.GetValue("AppsUseLightTheme") is int light && light == 0;
         }
         catch (Exception exception) when (exception is SecurityException or UnauthorizedAccessException)
         {

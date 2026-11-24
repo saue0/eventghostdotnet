@@ -20,7 +20,31 @@ Dans VS Code, la tâche « Release : arrêter, publier et redémarrer » demande
 dotnet test Tests\EventGhostDotNet.Core.Tests\EventGhostDotNet.Core.Tests.csproj
 ```
 
-Les tests couvrent la logique sans interface de `Core` : journal ANSI, migration et version de la configuration, écriture atomique, manifeste de plugins, règles d'exécution des macros et action `If`. Ils s'exécutent sans Windows ni WPF. La solution `EventGhostDotNet.sln` regroupe l'application, le contrat, les plugins, `Core` et les tests ; la CI les compile et les exécute sur Windows.
+Les tests couvrent la logique sans interface de `Core` : journal ANSI, migration et version de la configuration, écriture atomique, manifeste de plugins, règles d'exécution des macros, action `If` et comparaison des versions de publication. Ils s'exécutent sans Windows ni WPF. La solution `EventGhostDotNet.sln` regroupe l'application, le contrat, les plugins, `Core` et les tests ; la CI les compile et les exécute sur Windows.
+
+## Publication et installation
+
+Le script `build\publish.ps1` publie l'application et ses plugins pour Windows x64 et ARM64, puis vérifie l'exécutable, `runtimeconfig.json`, les 7 plugins et `plugins.manifest`.
+
+```powershell
+# Dépendant du runtime : .NET 9 Desktop Runtime x64 ou ARM64 requis sur le poste.
+.\build\publish.ps1
+
+# Autonome : le runtime est inclus, aucun prérequis .NET sur le poste.
+.\build\publish.ps1 -SelfContained
+
+# ARM64 uniquement, autonome, avec installateur.
+.\build\publish.ps1 -Runtime win-arm64 -SelfContained -Installer
+
+# Signature Authenticode de l'exécutable et de l'installateur (certificat dans CurrentUser\My).
+.\build\publish.ps1 -SelfContained -Installer -CertificateThumbprint <empreinte>
+```
+
+Les sorties vont dans `bin\publish\<runtime>-<variante>` et `bin\installer`. L'installateur Inno Setup installe dans `Program Files\EventGhostDotNet`, ajoute un raccourci au menu Démarrer (et facultativement au bureau) et se désinstalle proprement ; sa compilation demande Inno Setup 6.3 ou plus récent. L'installateur x64 fonctionne aussi sur Windows 11 ARM64 par émulation, tandis que l'installateur ARM64 ne s'installe que sur Windows ARM64.
+
+Les DLL des plugins ne sont pas signées après publication : leur empreinte SHA-256 figure dans `plugins.manifest` et toute signature modifierait le fichier, ce que le chargeur refuserait. Seuls l'exécutable principal et l'installateur portent la signature Authenticode. Sans certificat, `-CertificateThumbprint` est omis et les fichiers sont produits non signés.
+
+Fichier > Vérifier les mises à jour interroge la dernière release GitHub (`https://api.github.com/repos/saue0/eventghostdotnet/releases/latest`) et compare son étiquette à la version de l'application. Il n'installe rien automatiquement : il propose d'ouvrir la page de téléchargement. Publiez les versions avec une étiquette `v1.0.0` (ou `1.0.0`), la version de l'application étant définie par `<Version>` dans `EventGhostDotNet.csproj`.
 
 L'application n'accepte qu'une instance par session : un second lancement réactive la fenêtre existante au lieu d'ouvrir une autre instance. Les erreurs inattendues sont consignées dans `%LOCALAPPDATA%\EventGhostDotNet\errors.log` (fichier précédent conservé en `.old`) ; une erreur d'interface affiche un message et laisse l'application ouverte.
 

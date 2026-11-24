@@ -189,6 +189,7 @@
                 <MenuItem Header="Recharger les _plugins" Click="ReloadPlugins_Click"/>
                 <MenuItem Header="_Préférences de démarrage" Click="StartupPreferences_Click"/>
                 <MenuItem Header="Préférences _PowerShell..." Click="PowerShellPreferences_Click"/>
+                <MenuItem Header="Vérifier les _mises à jour..." Click="CheckForUpdates_Click"/>
                 <Separator/>
                 <MenuItem Header="_Quitter" Click="Exit_Click"/>
             </MenuItem>

@@ -29,7 +29,7 @@
 
 ## Priorité 4 — distribution et qualité
 
-- [ ] **Empaquetage** — MSIX ou installateur, signature de code, mise à jour intégrée, build ARM64 et option autonome sans .NET 9 Desktop Runtime. *(csproj, .vscode — L)*
+- [x] **Empaquetage** — `build\publish.ps1` publie win-x64 et win-arm64, dépendant du runtime ou autonome (`-SelfContained`), vérifie l'exécutable, `runtimeconfig.json`, les 7 plugins et `plugins.manifest`, signe l'exécutable puis l'installateur quand une empreinte de certificat est fournie, et compile un installateur Inno Setup 6.3+ (`x64compatible` ou `arm64`). La version `1.0.0` vient du csproj ; Fichier > Vérifier les mises à jour compare l'étiquette de la dernière release GitHub à la version courante et ouvre la page de téléchargement, sans remplacement automatique. La compilation de l'installateur et la signature Authenticode restent à valider sous Windows avec un certificat réel. *(build/publish.ps1, installer/, UpdateService.cs, Core/Updates — L)*
 - [ ] **CI Windows** — `dotnet publish`, démarrage smoke de l'exécutable et test de chargement des 7 plugins, en plus du build et des tests `Core`. *(.github/workflows/ci.yml — M)*
 - [ ] **Diagnostic** — journal fichier rotatif, « Ouvrir le dossier des journaux » et entrée Event Log en cas d'exception fatale. *(MainWindow — S/M)*
 - [ ] **Accessibilité** — noms UI Automation sur l'arborescence et le journal, navigation clavier du menu de l'icône. *(MainWindow.xaml — M)*
