@@ -22,21 +22,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <BuiltInPluginProject Include="Plugins\Display\Display.csproj;Plugins\Logitech\Logitech.csproj;Plugins\SystemTrayMenu\SystemTrayMenu.csproj;Plugins\Wallpaper\Wallpaper.csproj;Plugins\Scheduler\Scheduler.csproj;Plugins\FileWatcher\FileWatcher.csproj;Plugins\ProcessWatcher\ProcessWatcher.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Markdig" Version="0.41.3" />
     <Compile Remove="Plugins\**\*.cs;PluginContracts\**\*.cs;Core\**\*.cs;Tests\**\*.cs" />
     <ProjectReference Include="Core\EventGhostDotNet.Core.csproj" GlobalPropertiesToRemove="PublishDir" />
     <ProjectReference Include="PluginContracts\PluginContracts.csproj" GlobalPropertiesToRemove="PublishDir" />
-    <ProjectReference Include="Plugins\Display\Display.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
-    <ProjectReference Include="Plugins\Logitech\Logitech.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
-    <ProjectReference Include="Plugins\SystemTrayMenu\SystemTrayMenu.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
-    <ProjectReference Include="Plugins\Wallpaper\Wallpaper.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
-    <ProjectReference Include="Plugins\Scheduler\Scheduler.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
-    <ProjectReference Include="Plugins\FileWatcher\FileWatcher.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
-    <ProjectReference Include="Plugins\ProcessWatcher\ProcessWatcher.csproj" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
+    <ProjectReference Include="@(BuiltInPluginProject)" ReferenceOutputAssembly="false" GlobalPropertiesToRemove="PublishDir" />
   </ItemGroup>
 
   <Target Name="CopyBuiltInPlugins" AfterTargets="Build">
-    <MSBuild Projects="Plugins\Display\Display.csproj;Plugins\Logitech\Logitech.csproj;Plugins\SystemTrayMenu\SystemTrayMenu.csproj;Plugins\Wallpaper\Wallpaper.csproj;Plugins\Scheduler\Scheduler.csproj;Plugins\FileWatcher\FileWatcher.csproj;Plugins\ProcessWatcher\ProcessWatcher.csproj" Targets="GetTargetPath" RemoveProperties="RuntimeIdentifier">
+    <MSBuild Projects="@(BuiltInPluginProject)" Targets="GetTargetPath" RemoveProperties="RuntimeIdentifier">
       <Output TaskParameter="TargetOutputs" ItemName="BuiltInPluginAssemblies" />
     </MSBuild>
     <Copy SourceFiles="@(BuiltInPluginAssemblies)"
@@ -44,28 +42,26 @@
     <Copy SourceFiles="@(BuiltInPluginAssemblies->'%(RootDir)%(Directory)%(Filename).deps.json')"
           DestinationFiles="@(BuiltInPluginAssemblies->'$(OutDir)Plugins\%(Filename)\%(Filename).deps.json')" />
     <ItemGroup>
-      <BuiltInPluginManifestLine Include="@(BuiltInPluginAssemblies->'Plugins\%(Filename)\%(Filename)%(Extension)')" />
+      <BuiltInPluginManifestLine Include="@(BuiltInPluginAssemblies->'%(Filename)\%(Filename)%(Extension)')" />
     </ItemGroup>
     <WriteLinesToFile File="$(OutDir)Plugins\plugins.manifest" Lines="@(BuiltInPluginManifestLine)" Overwrite="true" />
   </Target>
 
   <Target Name="PublishBuiltInPlugins" AfterTargets="Publish">
-    <Copy SourceFiles="$(OutDir)Plugins\Display\Display.dll;$(OutDir)Plugins\Display\Display.deps.json"
-          DestinationFolder="$(PublishDir)Plugins\Display" />
-    <Copy SourceFiles="$(OutDir)Plugins\Logitech\Logitech.dll;$(OutDir)Plugins\Logitech\Logitech.deps.json"
-          DestinationFolder="$(PublishDir)Plugins\Logitech" />
-    <Copy SourceFiles="$(OutDir)Plugins\SystemTrayMenu\SystemTrayMenu.dll;$(OutDir)Plugins\SystemTrayMenu\SystemTrayMenu.deps.json"
-          DestinationFolder="$(PublishDir)Plugins\SystemTrayMenu" />
-    <Copy SourceFiles="$(OutDir)Plugins\Wallpaper\Wallpaper.dll;$(OutDir)Plugins\Wallpaper\Wallpaper.deps.json"
-          DestinationFolder="$(PublishDir)Plugins\Wallpaper" />
-    <Copy SourceFiles="$(OutDir)Plugins\Scheduler\Scheduler.dll;$(OutDir)Plugins\Scheduler\Scheduler.deps.json"
-          DestinationFolder="$(PublishDir)Plugins\Scheduler" />
-    <Copy SourceFiles="$(OutDir)Plugins\FileWatcher\FileWatcher.dll;$(OutDir)Plugins\FileWatcher\FileWatcher.deps.json"
-          DestinationFolder="$(PublishDir)Plugins\FileWatcher" />
-    <Copy SourceFiles="$(OutDir)Plugins\ProcessWatcher\ProcessWatcher.dll;$(OutDir)Plugins\ProcessWatcher\ProcessWatcher.deps.json"
-          DestinationFolder="$(PublishDir)Plugins\ProcessWatcher" />
+    <MSBuild Projects="@(BuiltInPluginProject)" Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration)"
+             RemoveProperties="RuntimeIdentifier;OutDir;PublishDir">
+      <Output TaskParameter="TargetOutputs" ItemName="PublishedPluginAssembly" />
+    </MSBuild>
+    <Copy SourceFiles="@(PublishedPluginAssembly)"
+          DestinationFolder="$(PublishDir)Plugins\%(Filename)" />
+    <Copy SourceFiles="@(PublishedPluginAssembly->'%(RootDir)%(Directory)%(Filename).deps.json')"
+          DestinationFolder="$(PublishDir)Plugins\%(Filename)" />
+    <ItemGroup>
+      <PublishedPluginManifestLine Include="@(PublishedPluginAssembly->'%(Filename)\%(Filename)%(Extension)')" />
+    </ItemGroup>
     <WriteLinesToFile File="$(PublishDir)Plugins\plugins.manifest"
-                      Lines="Plugins\Display\Display.dll;Plugins\Logitech\Logitech.dll;Plugins\SystemTrayMenu\SystemTrayMenu.dll;Plugins\Wallpaper\Wallpaper.dll;Plugins\Scheduler\Scheduler.dll;Plugins\FileWatcher\FileWatcher.dll;Plugins\ProcessWatcher\ProcessWatcher.dll"
+                      Lines="@(PublishedPluginManifestLine)"
                       Overwrite="true" />
   </Target>
 
