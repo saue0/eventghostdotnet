@@ -12,7 +12,6 @@ using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
 using CheckBox = System.Windows.Controls.CheckBox;
 using ComboBox = System.Windows.Controls.ComboBox;
-using FontFamily = System.Windows.Media.FontFamily;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using MessageBox = System.Windows.MessageBox;
 using Orientation = System.Windows.Controls.Orientation;
@@ -976,26 +975,10 @@ public partial class MainWindow
 
     private MacroAction? PromptForScript(MacroAction? existing)
     {
-        var editor = new TextBox
+        var editor = new PowerShellScriptEditor
         {
-            AcceptsReturn = true,
-            AcceptsTab = true,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            TextWrapping = TextWrapping.NoWrap,
-            FontFamily = new FontFamily("Consolas"),
-            FontSize = 13,
-            MinWidth = 640,
-            MinHeight = 300,
-            Text = existing?.Value ?? "# Exemple : écrire dans le journal\nWrite-Output 'Bonjour depuis PowerShell'"
-        };
-        editor.PreviewKeyDown += (_, args) =>
-        {
-            if (args.Key == Key.Tab)
-            {
-                editor.SelectedText = "    ";
-                args.Handled = true;
-            }
+            Text = existing?.Value ??
+                   "# Exemple : écrire dans le journal\nWrite-Output 'Bonjour depuis PowerShell'"
         };
 
         var dialog = new Window
@@ -1062,6 +1045,7 @@ public partial class MainWindow
         panel.Children.Add(useWindowsPowerShell);
         panel.Children.Add(editor);
         dialog.Content = panel;
+        dialog.Loaded += (_, _) => editor.FocusEditor();
 
         return dialog.ShowDialog() == true
             ? new MacroAction
