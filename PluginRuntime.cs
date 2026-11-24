@@ -14,7 +14,21 @@ internal sealed class PluginRuntime
 
     public IEnumerable<IPlugin> Plugins => _loader.Plugins;
 
-    public void Load(string directory, Action<string, LogLevel> log) => _loader.Load(directory, log);
+    public void Load(string directory, Action<string, LogLevel> log,
+        Func<IReadOnlyList<string>, bool>? approveUnverified = null) =>
+        _loader.Load(directory, log, approveUnverified);
+
+    /// <summary>
+    /// Libère les plugins, décharge leurs contextes de chargement puis recharge le dossier.
+    /// L'appelant doit avoir arrêté les plugins et détenir le verrou de cycle de vie.
+    /// </summary>
+    public async Task ReloadAsync(string directory, Action<string, LogLevel> log,
+        Func<IReadOnlyList<string>, bool>? approveUnverified = null)
+    {
+        await DisposeAllAsync(log);
+        _loader.UnloadAll(log);
+        _loader.Load(directory, log, approveUnverified);
+    }
 
     public IPlugin? Find(string id) => _loader.Find(id);
 

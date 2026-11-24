@@ -598,6 +598,7 @@ public partial class MainWindow
                 PluginStartups.Clear();
                 StartupActions.Clear();
                 _startupWindowMode = configuration.StartupWindowMode;
+                _powerShellPath = configuration.PowerShellPath;
                 foreach (var startup in configuration.PluginStartups)
                     PluginStartups.Add(startup);
                 foreach (var action in configuration.StartupActions)

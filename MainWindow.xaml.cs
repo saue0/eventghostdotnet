@@ -23,6 +23,7 @@ using Microsoft.VisualBasic;
 using EventGhostDotNet.Core.Configuration;
 using EventGhostDotNet.Core.Logging;
 using EventGhostDotNet.Core.Macros;
+using EventGhostDotNet.Core.PowerShell;
 using EventGhostDotNet.PluginContracts;
 using EventGhostDotNet.Platform.Windows;
 using Brushes = System.Windows.Media.Brushes;
@@ -301,6 +302,8 @@ public partial class MainWindow : Window
         new(StringComparer.OrdinalIgnoreCase);
     private readonly bool _startMinimizedFromCommandLine;
     private StartupWindowMode _startupWindowMode = StartupWindowMode.Show;
+    private string? _powerShellPath;
+    private bool _powerShellFallbackWarned;
     private bool _showRequestedFromNotification;
     private bool _applyingDisplaySettings;
     private bool _isExiting;
@@ -355,7 +358,8 @@ public partial class MainWindow : Window
         _configurationRoot = new ConfigurationRoot(_startupSection);
         _startupMacro = new MacroDefinition(StartupActions) { Name = "Démarrage" };
         ConfigurationTree.ItemsSource = new[] { _configurationRoot };
-        _pluginRuntime.Load(Path.Combine(GetApplicationDirectory(), "Plugins"), WriteLog);
+        _pluginRuntime.Load(Path.Combine(GetApplicationDirectory(), "Plugins"), WriteLog,
+            ConfirmUnverifiedPlugins);
         LoadConfiguration();
         if (_startMinimizedFromCommandLine || _startupWindowMode == StartupWindowMode.MinimizeToTray)
         {
@@ -462,6 +466,33 @@ public partial class MainWindow : Window
         await DispatchEventAsync(ApplicationStartupEventName, null);
     }
 
+    private bool ConfirmUnverifiedPlugins(IReadOnlyList<string> relativePaths)
+    {
+        var list = string.Join(Environment.NewLine, relativePaths.Select(path => $"• {path}"));
+        var message =
+            "Ces plugins ne sont pas répertoriés avec une empreinte SHA-256 valide dans " +
+            $"Plugins\\plugins.manifest :{Environment.NewLine}{Environment.NewLine}{list}" +
+            $"{Environment.NewLine}{Environment.NewLine}" +
+            "Un plugin s'exécute avec les droits de l'application et peut lire vos fichiers. " +
+            "Ne chargez que des plugins de confiance." +
+            $"{Environment.NewLine}{Environment.NewLine}Charger ces plugins quand même ?";
+        const string title = "Plugins non vérifiés";
+        var result = IsLoaded
+            ? MessageBox.Show(this, message, title, MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                MessageBoxResult.No)
+            : MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                MessageBoxResult.No);
+        if (result != MessageBoxResult.Yes)
+        {
+            WriteLog("Plugins non vérifiés refusés par l'utilisateur.", LogLevel.Warning);
+            return false;
+        }
+
+        WriteLog($"Plugins non vérifiés approuvés pour cette session : {string.Join(", ", relativePaths)}.",
+            LogLevel.Warning);
+        return true;
+    }
+
     private async void StopPlugins_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -477,6 +508,39 @@ public partial class MainWindow : Window
         {
             if (!_isClosed)
                 MessageBox.Show(this, exception.Message, "Erreur de plugin", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void ReloadPlugins_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await using (await _pluginRuntime.EnterAsync())
+            {
+                if (_isClosed)
+                    return;
+                await ResetPluginsAsync();
+                await _pluginRuntime.ReloadAsync(Path.Combine(GetApplicationDirectory(), "Plugins"),
+                    WriteLog, ConfirmUnverifiedPlugins);
+                _pluginTrayMenuItems.Clear();
+                RebuildApplicationTrayMenu();
+                RefreshPluginStartupDescriptions();
+                RefreshPluginDescriptions(Macros);
+                RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
+                if (_isClosed)
+                    return;
+                await StartConfiguredPluginsAsync();
+            }
+            WriteLog("Plugins rechargés.");
+        }
+        catch (OperationCanceledException) when (_isClosed)
+        {
+        }
+        catch (AggregateException exception)
+        {
+            if (!_isClosed)
+                MessageBox.Show(this, exception.Message, "Erreur de plugin", MessageBoxButton.OK,
+                    MessageBoxImage.Error);
         }
     }
 
@@ -1031,6 +1095,7 @@ public partial class MainWindow : Window
             PluginStartups.Clear();
             StartupActions.Clear();
             _startupWindowMode = newConfiguration.StartupWindowMode;
+            _powerShellPath = newConfiguration.PowerShellPath;
             foreach (var configuration in newConfiguration.PluginStartups)
                 PluginStartups.Add(configuration);
             foreach (var action in newConfiguration.StartupActions)
@@ -1212,6 +1277,128 @@ public partial class MainWindow : Window
         }
     }
 
+    private void PowerShellPreferences_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Window
+        {
+            Title = "Préférences PowerShell",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+            Padding = new Thickness(18)
+        };
+        var panel = new StackPanel { Width = 520 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "PowerShell 7 utilisé par les actions de script",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 8)
+        });
+        var status = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        panel.Children.Add(status);
+        var pathBox = new TextBox
+        {
+            Text = _powerShellPath ?? string.Empty,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        panel.Children.Add(pathBox);
+        var pathButtons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        var browse = new Button { Content = "Parcourir...", Margin = new Thickness(0, 0, 8, 0) };
+        var automatic = new Button { Content = "Détection automatique" };
+        pathButtons.Children.Add(browse);
+        pathButtons.Children.Add(automatic);
+        panel.Children.Add(pathButtons);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Laissez le champ vide pour chercher pwsh.exe dans le PATH et les emplacements " +
+                   "d'installation habituels. Si PowerShell 7 reste introuvable, les scripts s'exécutent " +
+                   "avec Windows PowerShell 5.1 et un avertissement est journalisé une fois par session.",
+            Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 12)
+        });
+
+        void UpdateStatus()
+        {
+            var configured = PowerShellExecutables.NormalizeConfiguredPath(pathBox.Text);
+            var detected = PowerShellExecutables.FindPowerShell7(configured);
+            if (detected is not null)
+            {
+                status.Text = $"PowerShell 7 : {detected}";
+                return;
+            }
+
+            status.Text = string.IsNullOrWhiteSpace(configured)
+                ? "PowerShell 7 introuvable : repli sur Windows PowerShell 5.1."
+                : $"Chemin introuvable : {configured}. Détection automatique utilisée à l'exécution.";
+        }
+
+        browse.Click += (_, _) =>
+        {
+            var picker = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Sélectionner pwsh.exe",
+                Filter = "PowerShell 7 (pwsh.exe)|pwsh.exe|Exécutables (*.exe)|*.exe",
+                CheckFileExists = true
+            };
+            if (picker.ShowDialog(dialog) == true)
+            {
+                pathBox.Text = picker.FileName;
+                UpdateStatus();
+            }
+        };
+        automatic.Click += (_, _) =>
+        {
+            pathBox.Text = string.Empty;
+            UpdateStatus();
+        };
+        pathBox.TextChanged += (_, _) => UpdateStatus();
+        UpdateStatus();
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
+        var save = new Button { Content = "Enregistrer", IsDefault = true };
+        buttons.Children.Add(save);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+
+        save.Click += (_, _) =>
+        {
+            var configured = PowerShellExecutables.NormalizeConfiguredPath(pathBox.Text);
+            if (configured is not null && !File.Exists(configured))
+            {
+                MessageBox.Show(dialog, $"Le fichier indiqué est introuvable :\n{configured}",
+                    "Préférences PowerShell", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var previous = _powerShellPath;
+            _powerShellPath = configured;
+            if (!SaveConfiguration())
+            {
+                _powerShellPath = previous;
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+
+        dialog.ShowDialog();
+    }
+
     private void About_Click(object sender, RoutedEventArgs e)
     {
         MessageBox.Show(this,
@@ -1226,6 +1413,7 @@ public partial class MainWindow : Window
         {
             var configuration = ReadConfiguration();
             _startupWindowMode = configuration.StartupWindowMode;
+            _powerShellPath = configuration.PowerShellPath;
             foreach (var startup in configuration.PluginStartups)
                 PluginStartups.Add(startup);
             foreach (var action in configuration.StartupActions)
@@ -1274,6 +1462,9 @@ public partial class MainWindow : Window
         configuration.MacroGroups ??= [];
         configuration.Macros ??= [];
         configuration.Display ??= new();
+        configuration.PowerShellPath = string.IsNullOrWhiteSpace(configuration.PowerShellPath)
+            ? null
+            : configuration.PowerShellPath.Trim();
 
         MigrateLegacyStartupActions(configuration);
         MigrateLegacySystemEvents(configuration);
@@ -1581,7 +1772,8 @@ public partial class MainWindow : Window
             Macros = Macros,
             StartupSectionExpanded = _startupSection.IsExpanded,
             StartupWindowMode = _startupWindowMode,
-            Display = CaptureDisplaySettings()
+            Display = CaptureDisplaySettings(),
+            PowerShellPath = _powerShellPath
         };
 
     private string SerializeConfiguration() => _configurationStore.Serialize(CreateConfigurationDocument());

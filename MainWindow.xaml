@@ -186,7 +186,9 @@
             <MenuItem Header="_Fichier">
                 <MenuItem Header="_Enregistrer" Click="SaveConfiguration_Click"/>
                 <MenuItem Header="_Recharger la configuration" Click="ReloadConfiguration_Click"/>
+                <MenuItem Header="Recharger les _plugins" Click="ReloadPlugins_Click"/>
                 <MenuItem Header="_Préférences de démarrage" Click="StartupPreferences_Click"/>
+                <MenuItem Header="Préférences _PowerShell..." Click="PowerShellPreferences_Click"/>
                 <Separator/>
                 <MenuItem Header="_Quitter" Click="Exit_Click"/>
             </MenuItem>

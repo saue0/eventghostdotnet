@@ -35,6 +35,44 @@ public sealed class PluginManifestTests : IDisposable
     }
 
     [Fact]
+    public void Manifeste_lit_les_empreintes_sha256()
+    {
+        var hash = new string('a', PluginManifest.Sha256HexLength);
+        var entries = PluginManifest.ParseEntries($"Display\\Display.dll|{hash}", _directory);
+
+        var entry = Assert.Single(entries);
+        Assert.Equal(Path.Combine(_directory, "Display", "Display.dll"), entry.Path);
+        Assert.Equal(hash, entry.Sha256);
+    }
+
+    [Fact]
+    public void Sans_empreinte_l_entree_est_non_verifiee()
+    {
+        var entries = PluginManifest.ParseEntries("A/A.dll", _directory);
+
+        Assert.Null(Assert.Single(entries).Sha256);
+    }
+
+    [Theory]
+    [InlineData("A/A.dll|")]
+    [InlineData("A/A.dll|abc")]
+    [InlineData("A/A.dll|zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")]
+    public void Manifeste_refuse_une_empreinte_invalide(string manifest)
+    {
+        Assert.Throws<InvalidDataException>(() => PluginManifest.ParseEntries(manifest, _directory));
+    }
+
+    [Fact]
+    public void La_convention_produit_des_entrees_non_verifiees()
+    {
+        CreateFile("A/A.dll");
+
+        var entries = PluginManifest.ResolveEntries(_directory);
+
+        Assert.Null(Assert.Single(entries).Sha256);
+    }
+
+    [Fact]
     public void Manifeste_refuse_un_chemin_hors_du_dossier()
     {
         Assert.Throws<InvalidDataException>(

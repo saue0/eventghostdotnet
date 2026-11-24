@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using EventGhostDotNet.Core.Macros;
+using EventGhostDotNet.Core.PowerShell;
 using EventGhostDotNet.PluginContracts;
 using Brushes = System.Windows.Media.Brushes;
 using Button = System.Windows.Controls.Button;
@@ -1059,14 +1060,47 @@ public partial class MainWindow
             : null;
     }
 
-    private static async Task RunPowerShellAsync(
+    private string ResolvePowerShellExecutable(bool useWindowsPowerShell, ActionContext context)
+    {
+        var windowsPowerShellPath = PowerShellExecutables.WindowsPowerShellPath;
+        if (useWindowsPowerShell)
+        {
+            if (!File.Exists(windowsPowerShellPath))
+                throw new InvalidOperationException(
+                    $"Windows PowerShell 5.1 est introuvable : {windowsPowerShellPath}");
+            return windowsPowerShellPath;
+        }
+
+        var detected = PowerShellExecutables.FindPowerShell7(_powerShellPath);
+        if (detected is not null)
+        {
+            context.Log($"PowerShell : {detected}", LogLevel.Debug);
+            return detected;
+        }
+
+        if (!File.Exists(windowsPowerShellPath))
+            throw new InvalidOperationException(
+                "PowerShell 7 est introuvable et Windows PowerShell 5.1 n'est pas disponible. " +
+                "Installez PowerShell 7 ou configurez son chemin dans Fichier > Préférences PowerShell.");
+
+        if (!_powerShellFallbackWarned)
+        {
+            _powerShellFallbackWarned = true;
+            var reason = string.IsNullOrWhiteSpace(_powerShellPath)
+                ? "PowerShell 7 est introuvable"
+                : $"Le chemin PowerShell 7 configuré est introuvable ({_powerShellPath})";
+            context.Log(
+                $"{reason} ; repli sur Windows PowerShell 5.1. Installez PowerShell 7 ou configurez " +
+                "son chemin dans Fichier > Préférences PowerShell.", LogLevel.Warning);
+        }
+        return windowsPowerShellPath;
+    }
+
+    private async Task RunPowerShellAsync(
         string script, bool unlimitedExecution, bool useWindowsPowerShell,
         ActionContext context, CancellationToken cancellationToken)
     {
-        var executable = useWindowsPowerShell
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
-                "WindowsPowerShell", "v1.0", "powershell.exe")
-            : "pwsh.exe";
+        var executable = ResolvePowerShellExecutable(useWindowsPowerShell, context);
         var markerPrefix = $"__EGDN_{Guid.NewGuid():N}_";
         var logMarker = $"{markerPrefix}LOG:";
         var eventMarker = $"{markerPrefix}EVENT:";
@@ -1176,12 +1210,10 @@ public partial class MainWindow
             {
                 startedProcess = Process.Start(startInfo);
             }
-            catch (System.ComponentModel.Win32Exception exception) when (
-                !useWindowsPowerShell && exception.NativeErrorCode is 2 or 3)
+            catch (System.ComponentModel.Win32Exception exception) when (exception.NativeErrorCode is 2 or 3)
             {
                 throw new InvalidOperationException(
-                    "PowerShell 7 est introuvable. Installez-le et ajoutez pwsh.exe au PATH, " +
-                    "ou sélectionnez Windows PowerShell 5.1 dans l'action.", exception);
+                    $"Impossible de démarrer PowerShell ({executable}) : {exception.Message}", exception);
             }
             using var process = startedProcess
                 ?? throw new InvalidOperationException("Impossible de démarrer PowerShell.");

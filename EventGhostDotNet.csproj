@@ -10,6 +10,12 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\EventGhostDotNet.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WFO0003 signale les réglages DPI du manifeste parce que UseWindowsForms est actif.
+         L'application est WPF et n'appelle pas le bootstrap WinForms (ApplicationConfiguration.Initialize
+         ou Application.SetHighDpiMode) : la conscience DPI doit venir du manifeste, qui couvre aussi
+         les plugins chargés dans le processus. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -45,8 +51,12 @@
           DestinationFiles="@(BuiltInPluginAssemblies->'$(OutDir)Plugins\%(Filename)\%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(BuiltInPluginAssemblies->'%(RootDir)%(Directory)%(Filename).deps.json')"
           DestinationFiles="@(BuiltInPluginAssemblies->'$(OutDir)Plugins\%(Filename)\%(Filename).deps.json')" />
+    <GetFileHash Files="@(BuiltInPluginAssemblies)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="BuiltInPluginHashedAssembly" />
+    </GetFileHash>
     <ItemGroup>
-      <BuiltInPluginManifestLine Include="@(BuiltInPluginAssemblies->'Plugins\%(Filename)\%(Filename)%(Extension)')" />
+      <!-- Le chargeur refuse une DLL dont l'empreinte diffère de celle du manifeste. -->
+      <BuiltInPluginManifestLine Include="@(BuiltInPluginHashedAssembly->'%(Filename)\%(Filename)%(Extension)|%(FileHash)')" />
     </ItemGroup>
     <WriteLinesToFile File="$(OutDir)Plugins\plugins.manifest" Lines="@(BuiltInPluginManifestLine)" Overwrite="true" />
   </Target>
@@ -61,11 +71,14 @@
           DestinationFolder="$(PublishDir)Plugins\%(Filename)" />
     <Copy SourceFiles="@(PublishedPluginAssembly->'%(RootDir)%(Directory)%(Filename).deps.json')"
           DestinationFolder="$(PublishDir)Plugins\%(Filename)" />
+    <GetFileHash Files="@(PublishedPluginAssembly)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="PublishedPluginHashedAssembly" />
+    </GetFileHash>
     <ItemGroup>
-      <PublishedPluginManifestLine Include="@(PublishedPluginAssembly->'%(Filename)\%(Filename)%(Extension)')" />
+      <PublishedPluginManifestLine Include="@(PublishedPluginHashedAssembly->'%(Filename)\%(Filename)%(Extension)|%(FileHash)')" />
     </ItemGroup>
     <WriteLinesToFile File="$(PublishDir)Plugins\plugins.manifest"
-                      Lines="Display\Display.dll;Logitech\Logitech.dll;SystemTrayMenu\SystemTrayMenu.dll;Wallpaper\Wallpaper.dll;Scheduler\Scheduler.dll;FileWatcher\FileWatcher.dll;ProcessWatcher\ProcessWatcher.dll"
+                      Lines="@(PublishedPluginManifestLine)"
                       Overwrite="true" />
   </Target>
 

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json.Serialization;
 using EventGhostDotNet.Core.Configuration;
 
 namespace EventGhostDotNet;
@@ -41,4 +42,8 @@ internal sealed class ConfigurationDocument
     public bool StartupSectionExpanded { get; set; } = true;
     public StartupWindowMode StartupWindowMode { get; set; } = StartupWindowMode.Show;
     public DisplaySettings Display { get; set; } = new();
+
+    /// <summary>Chemin explicite de PowerShell 7 ; absent pour la détection automatique.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PowerShellPath { get; set; }
 }
