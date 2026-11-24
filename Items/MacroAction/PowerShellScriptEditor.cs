@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -72,6 +73,8 @@ public sealed class PowerShellScriptEditor : Border
             }
         };
         _editor.TextArea.IndentationStrategy = new DefaultIndentationStrategy();
+        _editor.TextArea.TextView.ElementGenerators.Add(
+            new EmojiElementGenerator(_editor.Document, _editor.FontSize));
 
         if (Grammar is { } grammar)
         {
@@ -99,6 +102,105 @@ public sealed class PowerShellScriptEditor : Border
     }
 
     public void FocusEditor() => _editor.Focus();
+
+    /// <summary>
+    /// Remplace chaque séquence emoji par une image vectorielle : le moteur texte de WPF
+    /// ne sait pas rendre les polices couleur, les emoji y seraient dessinés en noir et blanc.
+    /// Le texte du document n'est pas modifié, seuls les glyphes affichés changent.
+    /// </summary>
+    private sealed class EmojiElementGenerator : VisualLineElementGenerator
+    {
+        private const double EmojiScale = 1.2;
+
+        private readonly TextDocument _document;
+        private readonly double _fontSize;
+        private readonly Dictionary<string, ImageSource> _images = new(StringComparer.Ordinal);
+
+        public EmojiElementGenerator(TextDocument document, double fontSize)
+        {
+            _document = document;
+            _fontSize = fontSize;
+        }
+
+        public override int GetFirstInterestedOffset(int startOffset)
+        {
+            var line = CurrentContext.VisualLine.LastDocumentLine;
+            if (startOffset >= line.EndOffset)
+                return -1;
+
+            var text = _document.GetText(line.Offset, line.Length);
+            var index = FindEmoji(text, startOffset - line.Offset);
+            return index < 0 ? -1 : line.Offset + index;
+        }
+
+        public override VisualLineElement? ConstructElement(int offset)
+        {
+            var line = _document.GetLineByOffset(offset);
+            var index = offset - line.Offset;
+            var text = _document.GetText(line.Offset, line.Length);
+            if (index < 0 || index >= text.Length)
+                return null;
+
+            var cluster = StringInfo.GetNextTextElement(text, index);
+            if (!IsEmoji(cluster))
+                return null;
+
+            var size = Math.Round(_fontSize * EmojiScale);
+            var image = new System.Windows.Controls.Image
+            {
+                Width = size,
+                Height = size,
+                Stretch = Stretch.Uniform,
+                Source = GetImage(cluster)
+            };
+            return new InlineObjectElement(cluster.Length, image);
+        }
+
+        /// <summary>Image colorée d'une séquence emoji, mise en cache par séquence.</summary>
+        private ImageSource GetImage(string emoji)
+        {
+            if (_images.TryGetValue(emoji, out var cached))
+                return cached;
+
+            var image = new DrawingImage();
+            Emoji.Wpf.Image.SetSource(image, emoji);
+            _images[emoji] = image;
+            return image;
+        }
+
+        private static int FindEmoji(string text, int start)
+        {
+            var index = start;
+            while (index < text.Length)
+            {
+                var cluster = StringInfo.GetNextTextElement(text, index);
+                if (IsEmoji(cluster))
+                    return index;
+                index += Math.Max(cluster.Length, 1);
+            }
+            return -1;
+        }
+
+        private static bool IsEmoji(string cluster)
+        {
+            foreach (var rune in cluster.EnumerateRunes())
+                if (IsEmojiCodePoint(rune.Value))
+                    return true;
+            return false;
+        }
+
+        private static bool IsEmojiCodePoint(int value) => value switch
+        {
+            >= 0x1F000 and <= 0x1FAFF => true, // pictogrammes, drapeaux, symboles complémentaires
+            >= 0x2600 and <= 0x27BF => true,   // symboles divers et dingbats
+            >= 0x2B00 and <= 0x2BFF => true,
+            >= 0x231A and <= 0x23FF => true,
+            0x25AA or 0x25AB or 0x25B6 or 0x25C0 => true,
+            >= 0x25FB and <= 0x25FE => true,
+            0x203C or 0x2049 or 0x2122 or 0x2139 or 0x3030 or 0x303D or 0x3297 or 0x3299 => true,
+            _ => false
+        };
+    }
 
     /// <summary>
     /// Colorise chaque ligne à partir des jetons produits par la grammaire TextMate.

@@ -27,6 +27,7 @@ Services extraits de `MainWindow` :
 - `PluginRuntime` : chargement, verrou de cycle de vie (`EnterAsync`), démarrage, arrêt, libération des plugins.
 - `ConfigurationDocument` : forme sérialisée, avec `SchemaVersion`.
 - `PowerShellScriptEditor` : éditeur de script AvalonEdit colorisé par la grammaire TextMate PowerShell (`TextMateSharp`, thème clair), avec import des jetons/états de fin de ligne mis en cache ; repli en texte brut si la grammaire ne charge pas.
+- Emoji : WPF ne rend pas les polices couleur, les emoji sortiraient en noir et blanc. `Emoji.Wpf` dessine les glyphes COLR/CPAL de Segoe UI Emoji en vectoriel ; l'éditeur remplace chaque grappe emoji par un `InlineObjectElement` (texte du document inchangé), et `NotificationWindow` / `NotificationHistoryWindow` utilisent `Emoji.Wpf.TextBlock`.
 - `NotificationService` / `NotificationWindow` / `NotificationHistoryWindow` : notifications empilées en bas à droite de l'écran principal (zone de travail `GetMonitorInfo` convertie en DIP avec le DPI de la fenêtre, repli `SystemParameters.WorkArea`), recalculées sur `DisplaySettingsChanged` et `DpiChanged`, remplacement par clé, clic pour afficher EventGhost, historique de 50 entrées cliquable depuis le menu de l'icône.
 
 ## Configuration
