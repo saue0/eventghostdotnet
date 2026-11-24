@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using EventGhostDotNet.Platform.Windows;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 
@@ -36,7 +37,7 @@ public partial class App : Application
             return;
         }
 
-        var window = new MainWindow();
+        var window = new MainWindow(WindowsStartupRegistration.RequestsMinimizedStartup(e.Args));
         MainWindow = window;
         window.Show();
     }

@@ -28,6 +28,7 @@ using EventGhostDotNet.Platform.Windows;
 using Brushes = System.Windows.Media.Brushes;
 using ButtonBase = System.Windows.Controls.Primitives.ButtonBase;
 using Button = System.Windows.Controls.Button;
+using CheckBox = System.Windows.Controls.CheckBox;
 using Clipboard = System.Windows.Clipboard;
 using ComboBox = System.Windows.Controls.ComboBox;
 using FontFamily = System.Windows.Media.FontFamily;
@@ -298,6 +299,7 @@ public partial class MainWindow : Window
     private ITrayIconService? _applicationTrayIcon;
     private readonly Dictionary<string, IReadOnlyList<PluginTrayMenuItem>> _pluginTrayMenuItems =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly bool _startMinimizedFromCommandLine;
     private StartupWindowMode _startupWindowMode = StartupWindowMode.Show;
     private bool _showRequestedFromNotification;
     private bool _applyingDisplaySettings;
@@ -340,9 +342,10 @@ public partial class MainWindow : Window
             }
     }
 
-    public MainWindow()
+    public MainWindow(bool startMinimizedFromCommandLine = false)
     {
         InitializeComponent();
+        _startMinimizedFromCommandLine = startMinimizedFromCommandLine;
         _configurationStore = new ConfigurationStore(_configurationPath, JsonOptions);
         _logView = CollectionViewSource.GetDefaultView(_logEntries);
         _logView.Filter = item => item is EventLogEntry entry && ShouldShowLogEntry(entry);
@@ -354,7 +357,7 @@ public partial class MainWindow : Window
         ConfigurationTree.ItemsSource = new[] { _configurationRoot };
         _pluginRuntime.Load(Path.Combine(GetApplicationDirectory(), "Plugins"), WriteLog);
         LoadConfiguration();
-        if (_startupWindowMode == StartupWindowMode.MinimizeToTray)
+        if (_startMinimizedFromCommandLine || _startupWindowMode == StartupWindowMode.MinimizeToTray)
         {
             WindowState = WindowState.Minimized;
             ShowInTaskbar = false;
@@ -451,7 +454,8 @@ public partial class MainWindow : Window
         }
         if (_isClosed)
             return;
-        if (_startupWindowMode == StartupWindowMode.MinimizeToTray && !_showRequestedFromNotification)
+        if ((_startMinimizedFromCommandLine || _startupWindowMode == StartupWindowMode.MinimizeToTray) &&
+            !_showRequestedFromNotification)
             Hide();
         await ExecuteStartupActionsAsync();
         await DispatchEventAsync(ConfigurationLoadedEventName, null);
@@ -1149,6 +1153,21 @@ public partial class MainWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 12)
         });
+        var startWithWindows = new CheckBox
+        {
+            Content = "Démarrer automatiquement avec Windows",
+            IsChecked = WindowsStartupRegistration.IsEnabled(),
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        panel.Children.Add(startWithWindows);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "L'application est alors lancée minimisée dans la zone de notification " +
+                   @"(valeur EventGhostDotNet dans HKCU\Software\Microsoft\Windows\CurrentVersion\Run).",
+            Foreground = Brushes.Gray,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 12)
+        });
 
         var buttons = new StackPanel
         {
@@ -1174,7 +1193,23 @@ public partial class MainWindow : Window
             ? StartupWindowMode.MinimizeToTray
             : StartupWindowMode.Show;
         if (!SaveConfiguration())
+        {
             _startupWindowMode = previousMode;
+            return;
+        }
+
+        try
+        {
+            WindowsStartupRegistration.SetEnabled(startWithWindows.IsChecked == true);
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or
+                                           System.Security.SecurityException or IOException or
+                                           InvalidOperationException)
+        {
+            MessageBox.Show(this,
+                $"Impossible de modifier le démarrage avec Windows : {exception.Message}",
+                "Préférences de démarrage", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void About_Click(object sender, RoutedEventArgs e)

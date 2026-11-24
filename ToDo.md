@@ -20,7 +20,7 @@
 
 ## Priorité 3 — intégration Windows
 
-- [ ] **Démarrage avec Windows** — case dans les préférences, clé `HKCU\...\CurrentVersion\Run` avec `--minimized`, et analyse des arguments au démarrage. *(App.xaml.cs, MainWindow — S/M)*
+- [x] **Démarrage avec Windows** — case dans les préférences, clé `HKCU\...\CurrentVersion\Run` avec `--minimized`, et analyse des arguments au démarrage : la valeur `EventGhostDotNet` contient la ligne de commande citée, et l'argument force un démarrage minimisé dans la zone de notification. *(WindowsStartupRegistration.cs, App.xaml.cs, MainWindow.xaml.cs — S)*
 - [ ] **Lecture DDC/CI** — `GetVCPFeature` pour afficher l'entrée courante, actions luminosité/contraste et reprise après réveil du moniteur. *(WindowsMonitorService.cs, DisplayModule — M)*
 - [ ] **Thème sombre et contraste élevé** — remplacer les couleurs figées de `App.xaml` et du renderer Markdown par des pinceaux système et des variantes sombres. *(App.xaml, MarkdownFlowDocumentRenderer.cs — M)*
 - [ ] **Manifeste d'application** — `PerMonitorV2`, `longPathAware`, `supportedOS` et `asInvoker` ; vérifier à 150/200 % sur deux écrans. *(nouveau app.manifest — S)*
