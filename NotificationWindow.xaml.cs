@@ -15,6 +15,7 @@ public partial class NotificationWindow : Window
         InitializeComponent();
         Key = key;
         SetContent(title, message);
+        FitToContent();
 
         _timer = new DispatcherTimer(Lifetime, DispatcherPriority.Background, (_, _) => Dismiss(), Dispatcher);
         _timer.Stop();
@@ -37,6 +38,7 @@ public partial class NotificationWindow : Window
         Opacity = 1;
         _closing = false;
         SetContent(title, message);
+        FitToContent();
         RestartTimer();
     }
 
@@ -50,6 +52,20 @@ public partial class NotificationWindow : Window
         TitleText.Visibility = string.IsNullOrWhiteSpace(normalizedTitle) ? Visibility.Collapsed : Visibility.Visible;
         MessageText.Visibility = string.IsNullOrWhiteSpace(normalizedMessage) ? Visibility.Collapsed : Visibility.Visible;
         MessageText.Margin = TitleText.Visibility == Visibility.Visible ? new Thickness(0, 3, 0, 0) : new Thickness(0);
+    }
+
+    /// <summary>
+    /// Hauteur mesurée à partir du contenu, en DIP. Une fenêtre transparente avec
+    /// <c>SizeToContent</c> est mal dimensionnée par WPF (double prise en compte du
+    /// facteur DPI) : la bulle devenait plusieurs fois plus haute que son texte.
+    /// </summary>
+    private void FitToContent()
+    {
+        if (Content is not FrameworkElement content)
+            return;
+
+        content.Measure(new System.Windows.Size(Width, double.PositiveInfinity));
+        Height = Math.Max(1, Math.Ceiling(content.DesiredSize.Height));
     }
 
     private void RestartTimer()
