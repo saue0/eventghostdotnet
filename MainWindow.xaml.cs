@@ -83,7 +83,7 @@ public partial class MainWindow : Window
         private string _text = string.Empty;
 
         public EventLogEntry(DateTime timestamp, string message, string? eventName, AnsiLogFormatter formatter,
-            LogLevel level, LogCategory category, int indentLevel)
+            LogLevel level, LogCategory category, int indentLevel, string? payload = null)
         {
             var (symbol, label, color) = level switch
             {
@@ -102,11 +102,13 @@ public partial class MainWindow : Window
             _indentLevel = indentLevel;
             LevelColor = color;
             EventName = eventName;
+            Payload = payload;
             Level = level;
             RefreshDisplay(showTime: true, dateStamp: false, indent: false);
         }
 
         public string? EventName { get; }
+        public string? Payload { get; }
         public LogLevel Level { get; }
         public LogCategory Category => _category;
         private System.Windows.Media.Brush LevelColor { get; }
@@ -296,6 +298,7 @@ public partial class MainWindow : Window
         new(StringComparer.OrdinalIgnoreCase);
     private StartupWindowMode _startupWindowMode = StartupWindowMode.Show;
     private bool _showRequestedFromNotification;
+    private bool _applyingDisplaySettings;
     private bool _isExiting;
     private bool _isClosed;
     private readonly EventWaitHandle _exitRequest;
@@ -1031,6 +1034,7 @@ public partial class MainWindow : Window
             RefreshPluginStartupDescriptions();
             RefreshPluginDescriptions(Macros);
             RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
+            ApplyDisplaySettings(newConfiguration.Display);
             RefreshHistorySubscriptions();
             _undoConfiguration.Clear();
             _redoConfiguration.Clear();
@@ -1194,6 +1198,7 @@ public partial class MainWindow : Window
             RefreshPluginStartupDescriptions();
             RefreshPluginDescriptions(Macros);
             RefreshSystemActionDescriptions(Macros.Append(_startupMacro));
+            ApplyDisplaySettings(configuration.Display);
             WriteLog(_configurationStore.Exists
                 ? $"Configuration chargée : {Macros.Count} macro(s)."
                 : "Configuration initiale créée en mémoire. Ajoutez vos macros puis enregistrez.");
@@ -1231,6 +1236,7 @@ public partial class MainWindow : Window
         configuration.StartupActions ??= [];
         configuration.MacroGroups ??= [];
         configuration.Macros ??= [];
+        configuration.Display ??= new();
 
         MigrateLegacyStartupActions(configuration);
         MigrateLegacySystemEvents(configuration);
@@ -1537,10 +1543,71 @@ public partial class MainWindow : Window
             MacroGroups = MacroGroups,
             Macros = Macros,
             StartupSectionExpanded = _startupSection.IsExpanded,
-            StartupWindowMode = _startupWindowMode
+            StartupWindowMode = _startupWindowMode,
+            Display = CaptureDisplaySettings()
         };
 
     private string SerializeConfiguration() => _configurationStore.Serialize(CreateConfigurationDocument());
+
+    private DisplaySettings CaptureDisplaySettings() => new()
+    {
+        ShowToolbar = ToolbarVisibilityMenuItem.IsChecked == true,
+        AutoExpandOnEvent = AutoExpandOnEventMenuItem.IsChecked == true,
+        ShowTime = ShowLogTimeMenuItem.IsChecked == true,
+        DateStamp = DateStampLogMenuItem.IsChecked == true,
+        Indent = IndentLogMenuItem.IsChecked == true,
+        ShowMacros = ShowMacrosInLogMenuItem.IsChecked == true,
+        ShowActions = ShowActionsInLogMenuItem.IsChecked == true,
+        ShowDebug = LogDebugFilter.IsChecked == true,
+        ShowInformation = LogInformationFilter.IsChecked == true,
+        ShowWarning = LogWarningFilter.IsChecked == true,
+        ShowError = LogErrorFilter.IsChecked == true
+    };
+
+    /// <summary>Applique les options d'affichage lues de la configuration, sans les réenregistrer.</summary>
+    private void ApplyDisplaySettings(DisplaySettings settings)
+    {
+        _applyingDisplaySettings = true;
+        try
+        {
+            ToolbarVisibilityMenuItem.IsChecked = settings.ShowToolbar;
+            MainToolBarTray.Visibility = settings.ShowToolbar ? Visibility.Visible : Visibility.Collapsed;
+            AutoExpandOnEventMenuItem.IsChecked = settings.AutoExpandOnEvent;
+            _autoExpandOnEvent = settings.AutoExpandOnEvent;
+            ShowLogTimeMenuItem.IsChecked = settings.ShowTime;
+            DateStampLogMenuItem.IsChecked = settings.DateStamp;
+            IndentLogMenuItem.IsChecked = settings.Indent;
+            ShowMacrosInLogMenuItem.IsChecked = settings.ShowMacros;
+            ShowActionsInLogMenuItem.IsChecked = settings.ShowActions;
+            ShowDebugLogMenuItem.IsChecked = settings.ShowDebug;
+            LogDebugFilter.IsChecked = settings.ShowDebug;
+            LogInformationFilter.IsChecked = settings.ShowInformation;
+            LogWarningFilter.IsChecked = settings.ShowWarning;
+            LogErrorFilter.IsChecked = settings.ShowError;
+            foreach (var entry in _logEntries)
+                entry.RefreshDisplay(settings.ShowTime, settings.DateStamp, settings.Indent);
+            RefreshLogView();
+        }
+        finally
+        {
+            _applyingDisplaySettings = false;
+        }
+    }
+
+    /// <summary>Réenregistre la configuration dès qu'une option d'affichage change.</summary>
+    private void PersistDisplaySettings()
+    {
+        if (_applyingDisplaySettings || SerializeConfiguration() == _cleanConfiguration)
+            return;
+        try
+        {
+            _cleanConfiguration = _configurationStore.Save(CreateConfigurationDocument());
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            WriteLog($"Impossible d'enregistrer les options d'affichage : {exception.Message}", LogLevel.Warning);
+        }
+    }
 
     private static MacroDefinition CreateSampleMacro() =>
         new()
@@ -1582,6 +1649,7 @@ public partial class MainWindow : Window
             ShowDebugLogMenuItem.IsChecked = LogDebugFilter.IsChecked == true;
         _logView.Refresh();
         ScrollLogToEnd();
+        PersistDisplaySettings();
     }
 
     private void WriteLog(string message) => WriteLog(message, null);
@@ -1614,10 +1682,10 @@ public partial class MainWindow : Window
 
     private void WriteLog(
         string message, string? eventName, AnsiLogFormatter? formatter = null, LogLevel level = LogLevel.Information,
-        LogCategory category = LogCategory.General, int indentLevel = 0)
+        LogCategory category = LogCategory.General, int indentLevel = 0, string? payload = null)
     {
         var entry = new EventLogEntry(DateTime.Now, message, eventName, formatter ?? new AnsiLogFormatter(),
-            level, category, indentLevel);
+            level, category, indentLevel, payload);
         entry.RefreshDisplay(ShowLogTimeMenuItem.IsChecked == true,
             DateStampLogMenuItem.IsChecked == true, IndentLogMenuItem.IsChecked == true);
         _logEntries.Add(entry);

@@ -60,12 +60,17 @@ public partial class MainWindow
             }
         };
 
-    private void LogCategoryFilter_Click(object sender, RoutedEventArgs e) => RefreshLogView();
+    private void LogCategoryFilter_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshLogView();
+        PersistDisplaySettings();
+    }
 
     private void ShowDebugLog_Click(object sender, RoutedEventArgs e)
     {
         LogDebugFilter.IsChecked = ShowDebugLogMenuItem.IsChecked;
         RefreshLogView();
+        PersistDisplaySettings();
     }
 
     private void LogDisplayOption_Click(object sender, RoutedEventArgs e)
@@ -74,6 +79,7 @@ public partial class MainWindow
             entry.RefreshDisplay(ShowLogTimeMenuItem.IsChecked == true,
                 DateStampLogMenuItem.IsChecked == true, IndentLogMenuItem.IsChecked == true);
         RefreshLogView();
+        PersistDisplaySettings();
     }
 
     private void RefreshLogView()
@@ -82,13 +88,19 @@ public partial class MainWindow
         ScrollLogToEnd();
     }
 
-    private void ToolbarVisibility_Click(object sender, RoutedEventArgs e) =>
+    private void ToolbarVisibility_Click(object sender, RoutedEventArgs e)
+    {
         MainToolBarTray.Visibility = ToolbarVisibilityMenuItem.IsChecked == true
             ? Visibility.Visible
             : Visibility.Collapsed;
+        PersistDisplaySettings();
+    }
 
-    private void AutoExpandOnEvent_Click(object sender, RoutedEventArgs e) =>
+    private void AutoExpandOnEvent_Click(object sender, RoutedEventArgs e)
+    {
         _autoExpandOnEvent = AutoExpandOnEventMenuItem.IsChecked == true;
+        PersistDisplaySettings();
+    }
 
     private void ExpandSelected_Click(object sender, RoutedEventArgs e) =>
         SetSelectedTreeItemExpanded(true);

@@ -68,7 +68,7 @@ public partial class MainWindow
             // Chaque événement est une racine du journal, même lorsqu'il est émis depuis une action :
             // sa ligne et la macro qu'il déclenche repartent au niveau zéro.
             WriteLog($"Événement reçu : {eventName}{detail} — {matchingMacros.Count} macro(s) correspondante(s).",
-                eventName);
+                eventName, payload: payload);
             foreach (var macro in matchingMacros)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -232,11 +232,21 @@ public partial class MainWindow
         WriteLog($"Événement « {eventName} » ajouté à la macro « {macro.Name} ».");
     }
 
-    private string? GetSelectedEventName()
+    private async void ReplayEvent_Click(object sender, RoutedEventArgs e)
+    {
+        if (GetSelectedLogEvent() is not { EventName: { } eventName } entry)
+            return;
+
+        await DispatchEventAsync(eventName, entry.Payload);
+    }
+
+    private string? GetSelectedEventName() => GetSelectedLogEvent()?.EventName;
+
+    private EventLogEntry? GetSelectedLogEvent()
     {
         if (LogList.SelectedItems.Count == 1 &&
-            LogList.SelectedItem is EventLogEntry entry && !string.IsNullOrWhiteSpace(entry.EventName))
-            return entry.EventName;
+            LogList.SelectedItem is EventLogEntry { EventName: not null and not "" } entry)
+            return entry;
 
         MessageBox.Show(this, "Sélectionnez un seul événement reçu dans le journal.", "Sélection d'événement",
             MessageBoxButton.OK, MessageBoxImage.Information);

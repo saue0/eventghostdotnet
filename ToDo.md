@@ -15,6 +15,8 @@
 - [x] **Minuterie multiple** — plusieurs minuteries peuvent être actives en même temps dans le plugin scheduler, y compris sous le même identifiant : elles s'exécutent en parallèle et « Annuler une tâche planifiée » les arrête toutes. *(SchedulerModule.cs — S)*
 - [x] **LOG indentation** — tous les événements partent au niveau zéro : un événement émis depuis une action n'hérite plus de l'indentation de cette action, sa ligne est une racine du journal et la macro déclenchée démarre au niveau 1. *(MainWindow.MacroEvent.cs — S)*
 - [x] **Historique des Notification** — une notification de même clé écrase son entrée dans l'historique (et non seulement la bulle affichée), chaque entrée peut être retirée avec ✕, et la fenêtre s'ajuste à son contenu entre 220 et 460 px ; les bulles masquent un titre ou un message vide, retirent les espaces de fin et plafonnent le message à 140 px avec une ellipse. *(NotificationService.cs, NotificationHistoryWindow.xaml, NotificationWindow.xaml.cs — S/M)*
+- [x] **Conservation des options d'affichage** — barre d'outils, développement automatique de l'arbre, heure, horodatage, indentation et filtres du journal (niveaux et catégories) sont enregistrés dans `configuration.json` dès qu'ils changent et restaurés au démarrage. *(ConfigurationDocument.cs, MainWindow.xaml.cs, MainWindow.Menus.cs — S)* 
+- [x] **Rejouer un Event du journal** — le payload d'un événement reçu est conservé dans sa ligne de journal ; le bouton « Rejouer l'événement » relance la distribution de cet événement avec son payload d'origine et réexécute les macros correspondantes. *(MainWindow.xaml, MainWindow.MacroEvent.cs, MainWindow.xaml.cs — S)*
 
 ## Priorité 3 — intégration Windows
 

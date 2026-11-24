@@ -317,6 +317,8 @@
                                        DockPanel.Dock="Left" Margin="0,0,8,0"/>
                             <Button Content="Copier l'événement" Click="CopyEventName_Click" Padding="5,2"
                                     ToolTip="Copier le nom de l'événement sélectionné"/>
+                            <Button Content="Rejouer l'événement" Click="ReplayEvent_Click" Padding="5,2"
+                                    Margin="4,0,0,0" ToolTip="Rejouer l'événement sélectionné avec son payload"/>
                             <Button Content="Ajouter à la macro" Click="AssignEventName_Click" Padding="5,2"
                                     Margin="4,0,0,0" ToolTip="Ajouter l'événement sélectionné à la macro"/>
                             <Button Content="Copier" Command="ApplicationCommands.Copy"
