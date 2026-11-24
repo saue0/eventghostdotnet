@@ -19,11 +19,14 @@ Chaque action est associée à un récepteur configuré. Ces commandes dialoguen
 
 ## Événements
 
-Les événements sont préfixés par le texte configuré. Avec le préfixe `Logitech`, ils comprennent notamment :
+Tous les événements commencent par le préfixe configuré dans la section **Démarrage**. Leur forme est `<préfixe>.<événement>` ; par exemple, avec le préfixe `Logitech`, `Battery` devient `Logitech.Battery`.
 
-- `Logitech.<touche>` pour les touches détectées ; plusieurs touches simultanées sont séparées par `+`.
-- `Logitech.Battery` pour l'état de batterie. Le payload contient le pourcentage, l'état et un `DeviceId` hexadécimal qui identifie l'emplacement de l'appareil sur le récepteur.
-- `Logitech.WIRELESS_DEVICE_STATUS` et `Logitech.Change_Host` pour des rapports HID bruts, en payload hexadécimal.
+| Événement | Payload |
+| --- | --- |
+| `<préfixe>.<touche>` | Aucun. Pour plusieurs touches simultanées, leurs noms sont réunis par `+` dans le suffixe de l'événement. |
+| `<préfixe>.Battery` | Pourcentage, état et `DeviceId` hexadécimal identifiant l'emplacement de l'appareil sur le récepteur. |
+| `<préfixe>.WIRELESS_DEVICE_STATUS` | Rapport HID brut en hexadécimal. |
+| `<préfixe>.Change_Host` | Rapport HID brut en hexadécimal. |
 
 ## Prérequis et limites
 

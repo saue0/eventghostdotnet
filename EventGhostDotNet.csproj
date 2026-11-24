@@ -45,7 +45,7 @@
     <Copy SourceFiles="@(BuiltInPluginAssemblies->'%(RootDir)%(Directory)%(Filename).deps.json')"
           DestinationFiles="@(BuiltInPluginAssemblies->'$(OutDir)Plugins\%(Filename)\%(Filename).deps.json')" />
     <ItemGroup>
-      <BuiltInPluginManifestLine Include="@(BuiltInPluginAssemblies->'%(Filename)\%(Filename)%(Extension)')" />
+      <BuiltInPluginManifestLine Include="@(BuiltInPluginAssemblies->'Plugins\%(Filename)\%(Filename)%(Extension)')" />
     </ItemGroup>
     <WriteLinesToFile File="$(OutDir)Plugins\plugins.manifest" Lines="@(BuiltInPluginManifestLine)" Overwrite="true" />
   </Target>
@@ -64,7 +64,7 @@
       <PublishedPluginManifestLine Include="@(PublishedPluginAssembly->'%(Filename)\%(Filename)%(Extension)')" />
     </ItemGroup>
     <WriteLinesToFile File="$(PublishDir)Plugins\plugins.manifest"
-                      Lines="@(PublishedPluginManifestLine)"
+                      Lines="Plugins\Display\Display.dll;Plugins\Logitech\Logitech.dll;Plugins\SystemTrayMenu\SystemTrayMenu.dll;Plugins\Wallpaper\Wallpaper.dll;Plugins\Scheduler\Scheduler.dll;Plugins\FileWatcher\FileWatcher.dll;Plugins\ProcessWatcher\ProcessWatcher.dll"
                       Overwrite="true" />
   </Target>
 
