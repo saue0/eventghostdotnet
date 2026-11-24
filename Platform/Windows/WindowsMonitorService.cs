@@ -10,12 +10,16 @@ internal sealed class WindowsMonitorService : IMonitorService, IDisposable
     private const uint MonitorInfoPrimary = 1;
     private const byte VcpInputSource = 0x60;
 
+    private readonly Action<Exception>? _logError;
     private readonly object _sync = new();
+    private readonly Dictionary<(string Monitor, byte Code), uint> _lastValues = [];
     private IReadOnlyList<PlatformMonitor>? _cache;
 
-    public WindowsMonitorService()
+    public WindowsMonitorService(Action<Exception>? logError = null)
     {
+        _logError = logError;
         SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
     }
 
     public IReadOnlyList<PlatformMonitor> GetMonitors()
@@ -24,7 +28,84 @@ internal sealed class WindowsMonitorService : IMonitorService, IDisposable
             return _cache ??= EnumerateMonitors();
     }
 
-    public void SetInputSource(string monitorKey, uint inputSource)
+    public MonitorVcpValue GetVcpFeature(string monitorKey, byte code)
+    {
+        uint current = 0;
+        uint maximum = 0;
+        UseMonitor(monitorKey, handle =>
+        {
+            if (!GetVcpFeatureValue(handle, code, out _, out current, out maximum))
+                throw new Win32Exception(Marshal.GetLastWin32Error(),
+                    $"Le moniteur a refusé la lecture DDC/CI (code 0x{code:X2}).");
+        });
+        return new MonitorVcpValue(current, maximum);
+    }
+
+    public void SetVcpFeature(string monitorKey, byte code, uint value)
+    {
+        UseMonitor(monitorKey, handle =>
+        {
+            if (!SetVcpFeatureValue(handle, code, value))
+                throw new Win32Exception(Marshal.GetLastWin32Error(),
+                    $"Le moniteur a refusé la commande DDC/CI (code 0x{code:X2}).");
+        });
+        lock (_sync)
+            _lastValues[(monitorKey, code)] = value;
+    }
+
+    public void SetInputSource(string monitorKey, uint inputSource) =>
+        SetVcpFeature(monitorKey, VcpInputSource, inputSource);
+
+    public void Dispose()
+    {
+        SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+    }
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        lock (_sync)
+            _cache = null;
+    }
+
+    /// <summary>
+    /// Après une veille, les moniteurs refusent souvent DDC/CI pendant quelques secondes :
+    /// les derniers réglages appliqués sont réessayés une fois le moniteur réveillé.
+    /// </summary>
+    private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode != PowerModes.Resume)
+            return;
+        lock (_sync)
+            _cache = null;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            RestoreLastValues();
+        });
+    }
+
+    private void RestoreLastValues()
+    {
+        KeyValuePair<(string Monitor, byte Code), uint>[] values;
+        lock (_sync)
+            values = _lastValues.ToArray();
+        foreach (var value in values)
+        {
+            try
+            {
+                SetVcpFeature(value.Key.Monitor, value.Key.Code, value.Value);
+            }
+            catch (Exception exception) when (exception is Win32Exception or InvalidOperationException or
+                                                   DllNotFoundException or EntryPointNotFoundException)
+            {
+                // Un écran débranché entre-temps ne doit pas interrompre la reprise des autres.
+                _logError?.Invoke(exception);
+            }
+        }
+    }
+
+    private static void UseMonitor(string monitorKey, Action<IntPtr> action)
     {
         var found = false;
         EnumerateMonitors((monitor, info) =>
@@ -42,8 +123,7 @@ internal sealed class WindowsMonitorService : IMonitorService, IDisposable
                 if (requestedIndex < 0 || requestedIndex >= physicalMonitors.Length)
                     throw new InvalidOperationException("Le moniteur configuré n'est plus disponible.");
 
-                if (!SetVcpFeature(physicalMonitors[requestedIndex].Handle, VcpInputSource, inputSource))
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), "Le moniteur a refusé la commande DDC/CI.");
+                action(physicalMonitors[requestedIndex].Handle);
                 found = true;
             }
             finally
@@ -55,14 +135,6 @@ internal sealed class WindowsMonitorService : IMonitorService, IDisposable
 
         if (!found)
             throw new InvalidOperationException($"Moniteur introuvable ou non compatible DDC/CI : {monitorKey}");
-    }
-
-    public void Dispose() => SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
-
-    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
-    {
-        lock (_sync)
-            _cache = null;
     }
 
     private static IReadOnlyList<PlatformMonitor> EnumerateMonitors()
@@ -188,5 +260,9 @@ internal sealed class WindowsMonitorService : IMonitorService, IDisposable
     private static extern bool DestroyPhysicalMonitor(IntPtr monitor);
 
     [DllImport("dxva2.dll", EntryPoint = "SetVCPFeature", SetLastError = true)]
-    private static extern bool SetVcpFeature(IntPtr monitor, byte code, uint value);
+    private static extern bool SetVcpFeatureValue(IntPtr monitor, byte code, uint value);
+
+    [DllImport("dxva2.dll", EntryPoint = "GetVCPFeatureAndVCPFeatureReply", SetLastError = true)]
+    private static extern bool GetVcpFeatureValue(
+        IntPtr monitor, byte code, out uint codeType, out uint currentValue, out uint maximumValue);
 }

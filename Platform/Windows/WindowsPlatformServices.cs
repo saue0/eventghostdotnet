@@ -5,12 +5,13 @@ namespace EventGhostDotNet.Platform.Windows;
 internal sealed class WindowsPlatformServices : IDisposable
 {
     private readonly WindowsSessionState _session;
-    private readonly WindowsMonitorService _monitors = new();
+    private readonly WindowsMonitorService _monitors;
     private readonly WindowsHidDeviceService _hidDevices = new();
 
     public WindowsPlatformServices(Action<Exception>? logError = null)
     {
         _session = new WindowsSessionState();
+        _monitors = new WindowsMonitorService(logError);
         Session = _session;
         IdleTime = new WindowsIdleTimeProvider(_session, logError);
     }

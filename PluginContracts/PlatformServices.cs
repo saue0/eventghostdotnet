@@ -28,9 +28,18 @@ public interface IIdleTimeProvider
 
 public sealed record PlatformMonitor(string Key, string Label);
 
+/// <summary>Valeur courante et maximale d'un contrôle VCP lu par DDC/CI.</summary>
+public sealed record MonitorVcpValue(uint Current, uint Maximum);
+
 public interface IMonitorService
 {
     IReadOnlyList<PlatformMonitor> GetMonitors();
+
+    /// <summary>Lit un code VCP (par exemple <c>0x10</c> luminosité ou <c>0x60</c> entrée).</summary>
+    MonitorVcpValue GetVcpFeature(string monitorKey, byte code);
+
+    void SetVcpFeature(string monitorKey, byte code, uint value);
+
     void SetInputSource(string monitorKey, uint inputSource);
 }
 

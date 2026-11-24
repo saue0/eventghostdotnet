@@ -295,7 +295,7 @@ public partial class MainWindow : Window
     private readonly ConfigurationRoot _configurationRoot;
     private readonly MacroDefinition _startupMacro;
     private readonly WindowsPlatformServices _platform =
-        new(exception => EventGhostDotNet.App.LogError(exception, "Inactivité système"));
+        new(exception => EventGhostDotNet.App.LogError(exception, "Services Windows"));
     private ITrayIconService? _applicationTrayIcon;
     private readonly Dictionary<string, IReadOnlyList<PluginTrayMenuItem>> _pluginTrayMenuItems =
         new(StringComparer.OrdinalIgnoreCase);
