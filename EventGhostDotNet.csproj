@@ -64,7 +64,7 @@
       <PublishedPluginManifestLine Include="@(PublishedPluginAssembly->'%(Filename)\%(Filename)%(Extension)')" />
     </ItemGroup>
     <WriteLinesToFile File="$(PublishDir)Plugins\plugins.manifest"
-                      Lines="Plugins\Display\Display.dll;Plugins\Logitech\Logitech.dll;Plugins\SystemTrayMenu\SystemTrayMenu.dll;Plugins\Wallpaper\Wallpaper.dll;Plugins\Scheduler\Scheduler.dll;Plugins\FileWatcher\FileWatcher.dll;Plugins\ProcessWatcher\ProcessWatcher.dll"
+                      Lines="Display\Display.dll;Logitech\Logitech.dll;SystemTrayMenu\SystemTrayMenu.dll;Wallpaper\Wallpaper.dll;Scheduler\Scheduler.dll;FileWatcher\FileWatcher.dll;ProcessWatcher\ProcessWatcher.dll"
                       Overwrite="true" />
   </Target>
 
