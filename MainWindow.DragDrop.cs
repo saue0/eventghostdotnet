@@ -318,10 +318,11 @@ public partial class MainWindow
         MacroDefinition destination, out string reason)
     {
         if (source.Actions.Any(other => !ReferenceEquals(other, action) &&
-                other.Kind == MacroActionKind.Jump && other.JumpMode == JumpMode.GotoAction &&
-                Guid.TryParse(other.Value, out var id) && id == action.Id))
+                ((other.Kind == MacroActionKind.Jump && other.JumpMode == JumpMode.GotoAction &&
+                  Guid.TryParse(other.Value, out var jumpId) && jumpId == action.Id) ||
+                 GetConditionalJumpTargetIds(other).Contains(action.Id))))
         {
-            reason = "Une action Jump de la macro actuelle cible cette action.";
+            reason = "Une action de branchement de la macro actuelle cible cette action.";
             return false;
         }
         if (action.Kind == MacroActionKind.Jump && action.JumpMode == JumpMode.GotoAction &&
@@ -329,6 +330,13 @@ public partial class MainWindow
              (targetId != action.Id && !destination.Actions.Any(item => item.Id == targetId))))
         {
             reason = "L'action Jump doit conserver sa cible dans la même macro.";
+            return false;
+        }
+        if (action.Kind == MacroActionKind.IfJump &&
+            GetConditionalJumpTargetIds(action).Any(targetId =>
+                targetId != action.Id && !destination.Actions.Any(item => item.Id == targetId)))
+        {
+            reason = "Les cibles de l'action If / Jump doivent rester dans la même macro.";
             return false;
         }
         if (ReferenceEquals(destination, _startupMacro) &&

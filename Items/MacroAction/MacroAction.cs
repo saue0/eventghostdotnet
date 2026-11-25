@@ -88,7 +88,7 @@ public sealed class MacroAction : ConfigurationItem
         MacroActionKind.EnableAction or MacroActionKind.DisableAction or
         MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem =>
             SystemDisplayName ?? "Action système : cible indisponible",
-        MacroActionKind.Jump or MacroActionKind.If =>
+        MacroActionKind.Jump or MacroActionKind.If or MacroActionKind.IfJump =>
             SystemDisplayName ?? "Branchement système : configuration indisponible",
         _ => Kind.ToString()
     };
@@ -98,6 +98,18 @@ public sealed class MacroAction : ConfigurationItem
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IfComparison? IfComparison { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? IfLeft { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ConditionalJumpMode? IfBranchMode { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ConditionalJumpMode? ElseBranchMode { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ElseTarget { get; set; }
 }
 
 public enum MacroActionKind
@@ -124,7 +136,8 @@ public enum MacroActionKind
     If,
     RaiseEvent,
     ActivateItem,
-    DeactivateItem
+    DeactivateItem,
+    IfJump
 }
 
 public enum ActivationTargetKind
@@ -148,4 +161,11 @@ public enum IfComparison
     Equals,
     Contains,
     NotEquals
+}
+
+public enum ConditionalJumpMode
+{
+    GotoAction,
+    Continue,
+    Stop
 }

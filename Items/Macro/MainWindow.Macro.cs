@@ -289,7 +289,7 @@ public partial class MainWindow
             var actionContext = new ActionContext(
                 this,
                 actionContextToken ?? cancellationToken,
-                action.Kind == MacroActionKind.If
+                action.Kind is MacroActionKind.If or MacroActionKind.IfJump
                     ? previousActionResult
                     : action.Value.Length == 0 ? null : action.Value,
                 triggerEvent,
@@ -416,10 +416,42 @@ public partial class MainWindow
                         }
                         break;
                     case MacroActionKind.If:
-                        var condition = EvaluateIf(FormatActionResult(actionContext.Result), action);
+                        var condition = EvaluateIf(
+                            ResolveIfLeft(action, previousActionResult, triggerEvent), action,
+                            ExpandActionTemplate(action.Value, previousActionResult, triggerEvent));
                         actionContext.Result = condition;
                         if (!condition)
                             nextActionIndex++;
+                        break;
+                    case MacroActionKind.IfJump:
+                        var ifJumpCondition = EvaluateIf(
+                            ResolveIfLeft(action, previousActionResult, triggerEvent), action,
+                            ExpandActionTemplate(action.Value, previousActionResult, triggerEvent));
+                        actionContext.Result = ifJumpCondition;
+                        var branchMode = (ifJumpCondition ? action.IfBranchMode : action.ElseBranchMode)
+                            ?? ConditionalJumpMode.GotoAction;
+                        switch (branchMode)
+                        {
+                            case ConditionalJumpMode.Continue:
+                                break;
+                            case ConditionalJumpMode.Stop:
+                                nextActionIndex = actionIds.Length;
+                                break;
+                            case ConditionalJumpMode.GotoAction:
+                                if (onlyActionId is not null)
+                                    throw new InvalidOperationException(
+                                        "Un If / Jump vers une action doit être exécuté avec toute sa macro.");
+                                var branchTarget = FindConditionalJumpTargetAction(macro,
+                                    ifJumpCondition ? action.Target : action.ElseTarget,
+                                    ifJumpCondition ? "If" : "Else");
+                                nextActionIndex = Array.IndexOf(actionIds, branchTarget.Id);
+                                if (nextActionIndex < 0)
+                                    throw new InvalidOperationException(
+                                        "L'action cible de If / Jump n'est plus dans la séquence.");
+                                break;
+                            default:
+                                throw new InvalidOperationException("Le mode de l'action If / Jump est invalide.");
+                        }
                         break;
                     default:
                         throw new InvalidOperationException($"Type d'action non pris en charge : {action.Kind}");

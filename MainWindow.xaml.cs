@@ -159,6 +159,7 @@ public partial class MainWindow : Window
     private sealed record ActivationTargetChoice(ActivationTargetKind Kind, string Target, string Value, string Label);
     private sealed record JumpModeChoice(JumpMode Mode, string Label);
     private sealed record IfComparisonChoice(IfComparison Comparison, string Label);
+    private sealed record ConditionalJumpModeChoice(ConditionalJumpMode Mode, string Label);
     private sealed record SystemActionResult(
         string Message, ActivationTargetKind Kind, string Target, string Value, bool PreviousState, bool CurrentState);
 
@@ -1517,7 +1518,7 @@ public partial class MainWindow : Window
                 MacroActionKind.OpenUrl or MacroActionKind.PowerShell or MacroActionKind.Plugin or
                 MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or MacroActionKind.EnableAction or MacroActionKind.DisableAction or
                 MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem or
-                MacroActionKind.Jump or MacroActionKind.If or MacroActionKind.RaiseEvent))
+                MacroActionKind.Jump or MacroActionKind.If or MacroActionKind.IfJump or MacroActionKind.RaiseEvent))
             {
                 var match = _pluginRuntime.FindLegacy(action.Kind.ToString());
                 if (match is not null)

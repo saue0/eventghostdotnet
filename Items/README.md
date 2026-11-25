@@ -28,6 +28,7 @@ Les actions système sont proposées lors de l’ajout d’une action à une mac
 | **Activer un élément** / **Désactiver un élément** | Active ou désactive un groupe, une macro, un événement, une action ou un démarrage de plugin. |
 | **Jump** | Appelle une macro puis arrête la séquence courante, appelle une macro puis reprend cette séquence, ou saute à une action de la macro courante. |
 | **If** | Compare le résultat de l’action précédente avec une valeur, sans tenir compte de la casse (`Est égale à`, `Contient`, `Est différente de`). Si la condition est fausse, l’action suivante est sautée. |
+| **If / Jump / Else Jump** | Compare le résultat de l’action précédente puis applique la branche « Si vrai » ou « Sinon » : sauter à une action de la macro courante, continuer à l’action suivante ou arrêter la macro. |
 
 Les actions **Journaliser**, **Afficher un message**, **Afficher une notification**, **Question Oui/Non**, **Ouvrir une URL** et **Déclencher un événement** (payload uniquement) développent les variables suivantes dans leur texte (et dans le titre de la notification ou de la question) :
 
@@ -40,7 +41,7 @@ Les actions **Journaliser**, **Afficher un message**, **Afficher une notificatio
 | `{{$eg.event}}` | Événement déclencheur complet, au format JSON. |
 | `{{$eg.variable.Nom}}` | Variable de session définie par `$eg.SetVariable` (nom sensible à la casse). |
 
-Un jeton inconnu est laissé tel quel ; une valeur absente est remplacée par du texte vide. Les jetons peuvent être entourés d’espaces et `$eg` ne tient pas compte de la casse. Pour **Ouvrir une URL**, le texte est développé avant la validation : l’URL finale doit commencer par `http://` ou `https://`. La clé de remplacement d’une notification est développée de la même manière.
+Un jeton inconnu est laissé tel quel ; une valeur absente est remplacée par du texte vide. Les jetons peuvent être entourés d’espaces et `$eg` ne tient pas compte de la casse. Pour **Ouvrir une URL**, le texte est développé avant la validation : l’URL finale doit commencer par `http://` ou `https://`. La clé de remplacement d’une notification est développée de la même manière. Les actions **If** et **If / Jump / Else Jump** développent également ces jetons dans « Valeur à tester » (vide = résultat précédent) et « Valeur attendue », ce qui permet par exemple de comparer `{{$eg.result}}` à `{{$eg.variable.Nom}}`.
 
 ## Événements
 

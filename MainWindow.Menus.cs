@@ -897,16 +897,28 @@ public partial class MainWindow
         var sourceActionId = action.Id;
         action.Id = Guid.NewGuid();
         var targetId = ReferenceEquals(target, _startupMacro) ? "Startup" : target.Id.ToString();
-        if (action.Kind == MacroActionKind.Jump && action.JumpMode == JumpMode.GotoAction &&
+        var requiresSameMacro = action.Kind == MacroActionKind.IfJump
+            ? GetConditionalJumpTargetIds(action).Length > 0
+            : action.Kind == MacroActionKind.Jump && action.JumpMode == JumpMode.GotoAction;
+        if (requiresSameMacro &&
             !string.Equals(payload.SourceId, targetId, StringComparison.OrdinalIgnoreCase))
         {
-            MessageBox.Show(this, "Un Jump vers une action ne peut être collé que dans sa macro d'origine.",
+            MessageBox.Show(this, "Une action qui saute vers une action de la macro ne peut être collée que dans sa macro d'origine.",
                 "Collage impossible", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         if (action.Kind == MacroActionKind.Jump && action.JumpMode == JumpMode.GotoAction &&
             Guid.TryParse(action.Value, out var jumpTargetId) && jumpTargetId == sourceActionId)
             action.Value = action.Id.ToString();
+        if (action.Kind == MacroActionKind.IfJump)
+        {
+            if ((action.IfBranchMode ?? ConditionalJumpMode.GotoAction) == ConditionalJumpMode.GotoAction &&
+                Guid.TryParse(action.Target, out var ifTargetId) && ifTargetId == sourceActionId)
+                action.Target = action.Id.ToString();
+            if ((action.ElseBranchMode ?? ConditionalJumpMode.GotoAction) == ConditionalJumpMode.GotoAction &&
+                Guid.TryParse(action.ElseTarget, out var elseTargetId) && elseTargetId == sourceActionId)
+                action.ElseTarget = action.Id.ToString();
+        }
         if ((action.Kind is MacroActionKind.EnableAction or MacroActionKind.DisableAction) &&
             Guid.TryParse(action.Target, out var targetMacroId) && targetMacroId == target.Id &&
             Guid.TryParse(action.Value, out var targetActionId) && targetActionId == sourceActionId)
@@ -984,6 +996,15 @@ public partial class MainWindow
                 Guid.TryParse(action.Target, out var targetGroupId) &&
                 groupIds.TryGetValue(targetGroupId, out var mappedGroupId))
                 action.Target = mappedGroupId.ToString();
+            if (action.Kind == MacroActionKind.IfJump)
+            {
+                if (Guid.TryParse(action.Target, out var ifTargetId) &&
+                    actionIds.TryGetValue(ifTargetId, out var mappedIfTargetId))
+                    action.Target = mappedIfTargetId.ToString();
+                if (Guid.TryParse(action.ElseTarget, out var elseTargetId) &&
+                    actionIds.TryGetValue(elseTargetId, out var mappedElseTargetId))
+                    action.ElseTarget = mappedElseTargetId.ToString();
+            }
         }
     }
 

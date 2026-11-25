@@ -125,6 +125,8 @@ public partial class MainWindow
             return PromptForLogAction(existing);
         if (kind == MacroActionKind.PowerShell)
             return PromptForScript(existing);
+        if (kind == MacroActionKind.IfJump)
+            return PromptForIfJumpAction(existing, sourceMacro);
         if (kind is MacroActionKind.Jump or MacroActionKind.If)
             return PromptForFlowAction(kind, existing, sourceMacro);
         if (IsTargetedSystemAction(kind))
@@ -604,6 +606,7 @@ public partial class MainWindow
         ComboBox? actionSelector = null;
         ComboBox? comparisonSelector = null;
         TextBox? comparisonValue = null;
+        TextBox? ifLeftValue = null;
         var targetLabel = new TextBlock { Margin = new Thickness(0, 0, 0, 5) };
 
         if (kind == MacroActionKind.Jump)
@@ -663,9 +666,24 @@ public partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
-                Text = "Tester la valeur configurée de l’action précédente :",
+                Text = "Valeur à tester (vide = résultat de l'action précédente) :",
                 Margin = new Thickness(0, 0, 0, 5)
             });
+            ifLeftValue = new TextBox
+            {
+                Text = existing?.IfLeft ?? string.Empty,
+                Padding = new Thickness(6),
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+            panel.Children.Add(ifLeftValue);
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Vide utilise {{$eg.result}} ; les variables sont acceptées.",
+                Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+            panel.Children.Add(new TextBlock { Text = "Comparaison :", Margin = new Thickness(0, 0, 0, 5) });
             var comparisonChoices = new[]
             {
                 new IfComparisonChoice(IfComparison.Equals, "Est égale à"),
@@ -680,14 +698,21 @@ public partial class MainWindow
                     choice.Comparison == (existing?.IfComparison ?? IfComparison.Equals)),
                 Margin = new Thickness(0, 0, 0, 8)
             };
+            panel.Children.Add(comparisonSelector);
+            panel.Children.Add(new TextBlock { Text = "Valeur attendue :", Margin = new Thickness(0, 0, 0, 5) });
             comparisonValue = new TextBox
             {
                 Text = existing?.Value ?? string.Empty,
                 Padding = new Thickness(6),
-                Margin = new Thickness(0, 0, 0, 12)
+                Margin = new Thickness(0, 0, 0, 6)
             };
-            panel.Children.Add(comparisonSelector);
             panel.Children.Add(comparisonValue);
+            panel.Children.Add(new TextBlock
+            {
+                Text = TemplateVariableHint,
+                Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
+                TextWrapping = TextWrapping.Wrap
+            });
         }
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
@@ -722,6 +747,7 @@ public partial class MainWindow
             {
                 Kind = kind,
                 IfComparison = comparison,
+                IfLeft = string.IsNullOrWhiteSpace(ifLeftValue?.Text) ? null : ifLeftValue.Text,
                 Value = comparisonValue?.Text ?? string.Empty
             };
         }
@@ -739,11 +765,213 @@ public partial class MainWindow
         };
     }
 
+    private MacroAction? PromptForIfJumpAction(MacroAction? existing, MacroDefinition? sourceMacro)
+    {
+        var dialog = new Window
+        {
+            Title = SystemActionName(MacroActionKind.IfJump),
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+            Padding = new Thickness(16)
+        };
+        var panel = new StackPanel { Width = 540 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Valeur à tester (vide = résultat de l'action précédente) :",
+            Margin = new Thickness(0, 0, 0, 5)
+        });
+        var ifLeftValue = new TextBox
+        {
+            Text = existing?.IfLeft ?? string.Empty,
+            Padding = new Thickness(6),
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        panel.Children.Add(ifLeftValue);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Vide utilise {{$eg.result}} ; les variables sont acceptées.",
+            Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 10)
+        });
+        panel.Children.Add(new TextBlock { Text = "Comparaison :", Margin = new Thickness(0, 0, 0, 5) });
+        var comparisonChoices = new[]
+        {
+            new IfComparisonChoice(IfComparison.Equals, "Est égale à"),
+            new IfComparisonChoice(IfComparison.Contains, "Contient"),
+            new IfComparisonChoice(IfComparison.NotEquals, "Est différente de")
+        };
+        var comparisonSelector = new ComboBox
+        {
+            ItemsSource = comparisonChoices,
+            DisplayMemberPath = nameof(IfComparisonChoice.Label),
+            SelectedItem = comparisonChoices.First(choice =>
+                choice.Comparison == (existing?.IfComparison ?? IfComparison.Equals)),
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        panel.Children.Add(comparisonSelector);
+        panel.Children.Add(new TextBlock { Text = "Valeur attendue :", Margin = new Thickness(0, 0, 0, 5) });
+        var comparisonValue = new TextBox
+        {
+            Text = existing?.Value ?? string.Empty,
+            Padding = new Thickness(6),
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        panel.Children.Add(comparisonValue);
+        panel.Children.Add(new TextBlock
+        {
+            Text = TemplateVariableHint,
+            Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        var modeChoices = new[]
+        {
+            new ConditionalJumpModeChoice(ConditionalJumpMode.GotoAction, "Sauter à une action"),
+            new ConditionalJumpModeChoice(ConditionalJumpMode.Continue, "Continuer à l'action suivante"),
+            new ConditionalJumpModeChoice(ConditionalJumpMode.Stop, "Arrêter la macro")
+        };
+        SystemActionChoice[] actionChoices = sourceMacro is null
+            ? []
+            : sourceMacro.Actions
+                .Where(item => existing is null || item.Id != existing.Id)
+                .Select(item => new SystemActionChoice(item,
+                    $"{sourceMacro.Actions.IndexOf(item) + 1}. {ActionTargetName(item)}"))
+                .ToArray();
+
+        ComboBox CreateModeSelector(ConditionalJumpMode selectedMode) => new()
+        {
+            ItemsSource = modeChoices,
+            DisplayMemberPath = nameof(ConditionalJumpModeChoice.Label),
+            SelectedItem = modeChoices.First(choice => choice.Mode == selectedMode),
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        ComboBox CreateTargetSelector(string? target) => new()
+        {
+            ItemsSource = actionChoices,
+            DisplayMemberPath = nameof(SystemActionChoice.Label),
+            SelectedItem = actionChoices.FirstOrDefault(choice =>
+                Guid.TryParse(target, out var id) && choice.Action.Id == id),
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+
+        var ifModeSelector = CreateModeSelector(existing?.IfBranchMode ?? ConditionalJumpMode.GotoAction);
+        var ifTargetSelector = CreateTargetSelector(existing?.Target);
+        var elseModeSelector = CreateModeSelector(existing?.ElseBranchMode ?? ConditionalJumpMode.GotoAction);
+        var elseTargetSelector = CreateTargetSelector(existing?.ElseTarget);
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Si la condition est vraie :",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 4, 0, 5)
+        });
+        panel.Children.Add(ifModeSelector);
+        panel.Children.Add(ifTargetSelector);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Sinon :",
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 6, 0, 5)
+        });
+        panel.Children.Add(elseModeSelector);
+        panel.Children.Add(elseTargetSelector);
+
+        void UpdateBranchTargets()
+        {
+            ifTargetSelector.Visibility =
+                (ifModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode == ConditionalJumpMode.GotoAction
+                    ? Visibility.Visible : Visibility.Collapsed;
+            elseTargetSelector.Visibility =
+                (elseModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode == ConditionalJumpMode.GotoAction
+                    ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        ifModeSelector.SelectionChanged += (_, _) => UpdateBranchTargets();
+        elseModeSelector.SelectionChanged += (_, _) => UpdateBranchTargets();
+        UpdateBranchTargets();
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
+        var save = new Button { Content = "Enregistrer", IsDefault = true };
+        save.Click += (_, _) =>
+        {
+            var ifGoto = (ifModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode == ConditionalJumpMode.GotoAction;
+            var elseGoto = (elseModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode == ConditionalJumpMode.GotoAction;
+            if ((ifGoto && ifTargetSelector.SelectedItem is not SystemActionChoice) ||
+                (elseGoto && elseTargetSelector.SelectedItem is not SystemActionChoice))
+            {
+                MessageBox.Show(dialog, "Sélectionnez une action cible pour chaque branche qui saute.",
+                    "Cible requise", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        buttons.Children.Add(save);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+
+        if (dialog.ShowDialog() != true)
+            return null;
+
+        var comparison = (comparisonSelector.SelectedItem as IfComparisonChoice)?.Comparison
+            ?? throw new InvalidOperationException("La comparaison de l'action If / Jump n'est pas sélectionnée.");
+        var ifMode = (ifModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode
+            ?? throw new InvalidOperationException("Le mode de la branche If n'est pas sélectionné.");
+        var elseMode = (elseModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode
+            ?? throw new InvalidOperationException("Le mode de la branche Else n'est pas sélectionné.");
+        var ifTarget = ifTargetSelector.SelectedItem as SystemActionChoice;
+        var elseTarget = elseTargetSelector.SelectedItem as SystemActionChoice;
+        return new MacroAction
+        {
+            Kind = MacroActionKind.IfJump,
+            IfComparison = comparison,
+            IfLeft = string.IsNullOrWhiteSpace(ifLeftValue.Text) ? null : ifLeftValue.Text,
+            Value = comparisonValue.Text,
+            IfBranchMode = ifMode == ConditionalJumpMode.GotoAction ? null : ifMode,
+            ElseBranchMode = elseMode == ConditionalJumpMode.GotoAction ? null : elseMode,
+            Target = ifMode == ConditionalJumpMode.GotoAction
+                ? ifTarget?.Action.Id.ToString() ?? string.Empty
+                : string.Empty,
+            ElseTarget = elseMode == ConditionalJumpMode.GotoAction
+                ? elseTarget?.Action.Id.ToString()
+                : null
+        };
+    }
+
+    private static MacroAction FindConditionalJumpTargetAction(
+        MacroDefinition macro, string? target, string branch)
+    {
+        if (!Guid.TryParse(target, out var id) || id == Guid.Empty)
+            throw new InvalidOperationException($"Identifiant de la branche {branch} de If / Jump invalide.");
+        var matches = macro.Actions.Where(item => item.Id == id).Take(2).ToArray();
+        return matches.Length == 1
+            ? matches[0]
+            : throw new InvalidOperationException(
+                $"L'action cible de la branche {branch} de If / Jump dans « {macro.Name} » est introuvable ou son identifiant est dupliqué.");
+    }
+
+    private static Guid[] GetConditionalJumpTargetIds(MacroAction action)
+    {
+        if (action.Kind != MacroActionKind.IfJump)
+            return [];
+        var targets = new List<Guid>();
+        if ((action.IfBranchMode ?? ConditionalJumpMode.GotoAction) == ConditionalJumpMode.GotoAction &&
+            Guid.TryParse(action.Target, out var ifTarget))
+            targets.Add(ifTarget);
+        if ((action.ElseBranchMode ?? ConditionalJumpMode.GotoAction) == ConditionalJumpMode.GotoAction &&
+            Guid.TryParse(action.ElseTarget, out var elseTarget))
+            targets.Add(elseTarget);
+        return targets.ToArray();
+    }
+
     private static bool IsSystemAction(MacroActionKind kind) =>
         kind is MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or
             MacroActionKind.EnableAction or MacroActionKind.DisableAction or
             MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem or
-            MacroActionKind.Jump or MacroActionKind.If;
+            MacroActionKind.Jump or MacroActionKind.If or MacroActionKind.IfJump;
 
     private static bool IsTargetedSystemAction(MacroActionKind kind) =>
         kind is MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or
@@ -760,6 +988,7 @@ public partial class MainWindow
         MacroActionKind.DeactivateItem => "Système — désactiver",
         MacroActionKind.Jump => "Système — Jump",
         MacroActionKind.If => "Système — If",
+        MacroActionKind.IfJump => "Système — If / Jump / Else Jump",
         _ => throw new InvalidOperationException($"Action système inconnue : {kind}")
     };
 
@@ -906,6 +1135,40 @@ public partial class MainWindow
                 continue;
             try
             {
+                if (action.Kind == MacroActionKind.IfJump)
+                {
+                    var comparison = action.IfComparison switch
+                    {
+                        IfComparison.Equals => "est égale à",
+                        IfComparison.Contains => "contient",
+                        IfComparison.NotEquals => "est différente de",
+                        _ => "a une comparaison invalide"
+                    };
+                    string DescribeBranch(ConditionalJumpMode? mode, string? targetId, string branch)
+                    {
+                        switch (mode ?? ConditionalJumpMode.GotoAction)
+                        {
+                            case ConditionalJumpMode.Continue:
+                                return "continuer";
+                            case ConditionalJumpMode.Stop:
+                                return "arrêter la macro";
+                            case ConditionalJumpMode.GotoAction:
+                                var targetAction = FindConditionalJumpTargetAction(ownerMacro, targetId, branch);
+                                return $"action {ownerMacro.Actions.IndexOf(targetAction) + 1}";
+                            default:
+                                return "mode invalide";
+                        }
+                    }
+                    var leftDescription = string.IsNullOrWhiteSpace(action.IfLeft)
+                        ? "valeur précédente"
+                        : action.IfLeft;
+                    action.SystemDisplayName =
+                        $"{SystemActionName(action.Kind)} — si {leftDescription} {comparison} « {action.Value} » : " +
+                        $"{DescribeBranch(action.IfBranchMode, action.Target, "If")} ; sinon : " +
+                        $"{DescribeBranch(action.ElseBranchMode, action.ElseTarget, "Else")}";
+                    continue;
+                }
+
                 if (action.Kind == MacroActionKind.If)
                 {
                     var comparison = action.IfComparison switch
@@ -915,7 +1178,10 @@ public partial class MainWindow
                         IfComparison.NotEquals => "est différente de",
                         _ => "a une comparaison invalide"
                     };
-                    action.SystemDisplayName = $"{SystemActionName(action.Kind)} — valeur précédente {comparison} « {action.Value} »";
+                    var leftDescription = string.IsNullOrWhiteSpace(action.IfLeft)
+                        ? "valeur précédente"
+                        : action.IfLeft;
+                    action.SystemDisplayName = $"{SystemActionName(action.Kind)} — {leftDescription} {comparison} « {action.Value} »";
                     continue;
                 }
 
@@ -1109,7 +1375,7 @@ public partial class MainWindow
         }
     }
 
-    private static bool EvaluateIf(string? previousResult, MacroAction action)
+    private static bool EvaluateIf(string? left, MacroAction action, string expected)
     {
         var comparison = action.IfComparison switch
         {
@@ -1118,8 +1384,13 @@ public partial class MainWindow
             IfComparison.NotEquals => IfOperator.NotEquals,
             _ => throw new InvalidOperationException("La comparaison de l'action If est invalide.")
         };
-        return MacroConditionEvaluator.Evaluate(previousResult, comparison, action.Value);
+        return MacroConditionEvaluator.Evaluate(left, comparison, expected);
     }
+
+    private string? ResolveIfLeft(MacroAction action, object? previousResult, TriggerEvent? triggerEvent) =>
+        string.IsNullOrWhiteSpace(action.IfLeft)
+            ? FormatActionResult(previousResult)
+            : ExpandActionTemplate(action.IfLeft, previousResult, triggerEvent);
 
     private static string? FormatActionResult(object? result) => MacroValueFormatter.Format(result);
 
@@ -1521,6 +1792,7 @@ public partial class MainWindow
             new(MacroActionKind.DeactivateItem, "Désactiver un élément"),
             new(MacroActionKind.Jump, "Jump"),
             new(MacroActionKind.If, "If"),
+            new(MacroActionKind.IfJump, "If / Jump / Else Jump"),
             new(MacroActionKind.RaiseEvent, "Déclencher un événement")
         };
         choices.AddRange(CreatePluginActionChoices(_pluginRuntime.Plugins, PluginStartups));
