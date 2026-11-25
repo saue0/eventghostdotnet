@@ -449,6 +449,14 @@ public partial class MainWindow
                                     throw new InvalidOperationException(
                                         "L'action cible de If / Jump n'est plus dans la séquence.");
                                 break;
+                            case ConditionalJumpMode.GotoMacro:
+                                var branchMacro = FindSystemTargetMacro(Macros,
+                                    ifJumpCondition ? action.Target : action.ElseTarget);
+                                await ExecuteMacroAsync(branchMacro, cancellationToken, callDepth + 1,
+                                    triggerEvent: triggerEvent, logIndentLevel: actionLogIndentLevel,
+                                    actionContextToken: actionContextToken);
+                                nextActionIndex = actionIds.Length;
+                                break;
                             default:
                                 throw new InvalidOperationException("Le mode de l'action If / Jump est invalide.");
                         }

@@ -830,6 +830,7 @@ public partial class MainWindow
         var modeChoices = new[]
         {
             new ConditionalJumpModeChoice(ConditionalJumpMode.GotoAction, "Sauter à une action"),
+            new ConditionalJumpModeChoice(ConditionalJumpMode.GotoMacro, "Sauter à une macro"),
             new ConditionalJumpModeChoice(ConditionalJumpMode.Continue, "Continuer à l'action suivante"),
             new ConditionalJumpModeChoice(ConditionalJumpMode.Stop, "Arrêter la macro")
         };
@@ -840,6 +841,8 @@ public partial class MainWindow
                 .Select(item => new SystemActionChoice(item,
                     $"{sourceMacro.Actions.IndexOf(item) + 1}. {ActionTargetName(item)}"))
                 .ToArray();
+        var macroChoices = Macros.Select((macro, index) =>
+            new SystemMacroChoice(macro, $"{index + 1}. {macro.Name}")).ToArray();
 
         ComboBox CreateModeSelector(ConditionalJumpMode selectedMode) => new()
         {
@@ -848,7 +851,7 @@ public partial class MainWindow
             SelectedItem = modeChoices.First(choice => choice.Mode == selectedMode),
             Margin = new Thickness(0, 0, 0, 8)
         };
-        ComboBox CreateTargetSelector(string? target) => new()
+        ComboBox CreateActionSelector(string? target) => new()
         {
             ItemsSource = actionChoices,
             DisplayMemberPath = nameof(SystemActionChoice.Label),
@@ -856,11 +859,21 @@ public partial class MainWindow
                 Guid.TryParse(target, out var id) && choice.Action.Id == id),
             Margin = new Thickness(0, 0, 0, 8)
         };
+        ComboBox CreateMacroSelector(string? target) => new()
+        {
+            ItemsSource = macroChoices,
+            DisplayMemberPath = nameof(SystemMacroChoice.Label),
+            SelectedItem = macroChoices.FirstOrDefault(choice =>
+                Guid.TryParse(target, out var id) && choice.Macro.Id == id),
+            Margin = new Thickness(0, 0, 0, 8)
+        };
 
         var ifModeSelector = CreateModeSelector(existing?.IfBranchMode ?? ConditionalJumpMode.GotoAction);
-        var ifTargetSelector = CreateTargetSelector(existing?.Target);
+        var ifTargetSelector = CreateActionSelector(existing?.Target);
+        var ifMacroSelector = CreateMacroSelector(existing?.Target);
         var elseModeSelector = CreateModeSelector(existing?.ElseBranchMode ?? ConditionalJumpMode.GotoAction);
-        var elseTargetSelector = CreateTargetSelector(existing?.ElseTarget);
+        var elseTargetSelector = CreateActionSelector(existing?.ElseTarget);
+        var elseMacroSelector = CreateMacroSelector(existing?.ElseTarget);
 
         panel.Children.Add(new TextBlock
         {
@@ -870,6 +883,7 @@ public partial class MainWindow
         });
         panel.Children.Add(ifModeSelector);
         panel.Children.Add(ifTargetSelector);
+        panel.Children.Add(ifMacroSelector);
         panel.Children.Add(new TextBlock
         {
             Text = "Sinon :",
@@ -878,15 +892,22 @@ public partial class MainWindow
         });
         panel.Children.Add(elseModeSelector);
         panel.Children.Add(elseTargetSelector);
+        panel.Children.Add(elseMacroSelector);
 
         void UpdateBranchTargets()
         {
-            ifTargetSelector.Visibility =
-                (ifModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode == ConditionalJumpMode.GotoAction
-                    ? Visibility.Visible : Visibility.Collapsed;
-            elseTargetSelector.Visibility =
-                (elseModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode == ConditionalJumpMode.GotoAction
-                    ? Visibility.Visible : Visibility.Collapsed;
+            var ifMode = (ifModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode
+                ?? ConditionalJumpMode.GotoAction;
+            var elseMode = (elseModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode
+                ?? ConditionalJumpMode.GotoAction;
+            ifTargetSelector.Visibility = ifMode == ConditionalJumpMode.GotoAction
+                ? Visibility.Visible : Visibility.Collapsed;
+            ifMacroSelector.Visibility = ifMode == ConditionalJumpMode.GotoMacro
+                ? Visibility.Visible : Visibility.Collapsed;
+            elseTargetSelector.Visibility = elseMode == ConditionalJumpMode.GotoAction
+                ? Visibility.Visible : Visibility.Collapsed;
+            elseMacroSelector.Visibility = elseMode == ConditionalJumpMode.GotoMacro
+                ? Visibility.Visible : Visibility.Collapsed;
         }
 
         ifModeSelector.SelectionChanged += (_, _) => UpdateBranchTargets();
@@ -898,12 +919,21 @@ public partial class MainWindow
         var save = new Button { Content = "Enregistrer", IsDefault = true };
         save.Click += (_, _) =>
         {
-            var ifGoto = (ifModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode == ConditionalJumpMode.GotoAction;
-            var elseGoto = (elseModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode == ConditionalJumpMode.GotoAction;
-            if ((ifGoto && ifTargetSelector.SelectedItem is not SystemActionChoice) ||
-                (elseGoto && elseTargetSelector.SelectedItem is not SystemActionChoice))
+            var ifMode = (ifModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode
+                ?? ConditionalJumpMode.GotoAction;
+            var elseMode = (elseModeSelector.SelectedItem as ConditionalJumpModeChoice)?.Mode
+                ?? ConditionalJumpMode.GotoAction;
+            var invalidIf = ifMode == ConditionalJumpMode.GotoAction
+                ? ifTargetSelector.SelectedItem is not SystemActionChoice
+                : ifMode == ConditionalJumpMode.GotoMacro &&
+                  ifMacroSelector.SelectedItem is not SystemMacroChoice;
+            var invalidElse = elseMode == ConditionalJumpMode.GotoAction
+                ? elseTargetSelector.SelectedItem is not SystemActionChoice
+                : elseMode == ConditionalJumpMode.GotoMacro &&
+                  elseMacroSelector.SelectedItem is not SystemMacroChoice;
+            if (invalidIf || invalidElse)
             {
-                MessageBox.Show(dialog, "Sélectionnez une action cible pour chaque branche qui saute.",
+                MessageBox.Show(dialog, "Sélectionnez une action ou une macro cible pour chaque branche qui saute.",
                     "Cible requise", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -924,6 +954,8 @@ public partial class MainWindow
             ?? throw new InvalidOperationException("Le mode de la branche Else n'est pas sélectionné.");
         var ifTarget = ifTargetSelector.SelectedItem as SystemActionChoice;
         var elseTarget = elseTargetSelector.SelectedItem as SystemActionChoice;
+        var ifMacro = ifMacroSelector.SelectedItem as SystemMacroChoice;
+        var elseMacro = elseMacroSelector.SelectedItem as SystemMacroChoice;
         return new MacroAction
         {
             Kind = MacroActionKind.IfJump,
@@ -932,12 +964,18 @@ public partial class MainWindow
             Value = comparisonValue.Text,
             IfBranchMode = ifMode == ConditionalJumpMode.GotoAction ? null : ifMode,
             ElseBranchMode = elseMode == ConditionalJumpMode.GotoAction ? null : elseMode,
-            Target = ifMode == ConditionalJumpMode.GotoAction
-                ? ifTarget?.Action.Id.ToString() ?? string.Empty
-                : string.Empty,
-            ElseTarget = elseMode == ConditionalJumpMode.GotoAction
-                ? elseTarget?.Action.Id.ToString()
-                : null
+            Target = ifMode switch
+            {
+                ConditionalJumpMode.GotoAction => ifTarget?.Action.Id.ToString() ?? string.Empty,
+                ConditionalJumpMode.GotoMacro => ifMacro?.Macro.Id.ToString() ?? string.Empty,
+                _ => string.Empty
+            },
+            ElseTarget = elseMode switch
+            {
+                ConditionalJumpMode.GotoAction => elseTarget?.Action.Id.ToString(),
+                ConditionalJumpMode.GotoMacro => elseMacro?.Macro.Id.ToString(),
+                _ => null
+            }
         };
     }
 
@@ -995,14 +1033,17 @@ public partial class MainWindow
     private static string ActionTargetName(MacroAction action) =>
         IsSystemAction(action.Kind) ? SystemActionName(action.Kind) : action.DisplayName;
 
-    private static MacroDefinition FindSystemTargetMacro(IEnumerable<MacroDefinition> macros, MacroAction action)
+    private static MacroDefinition FindSystemTargetMacro(IEnumerable<MacroDefinition> macros, string? target)
     {
-        if (!Guid.TryParse(action.Target, out var id) || id == Guid.Empty)
+        if (!Guid.TryParse(target, out var id) || id == Guid.Empty)
             throw new InvalidOperationException("Identifiant de macro cible invalide.");
         var matches = macros.Where(macro => macro.Id == id).Take(2).ToArray();
         return matches.Length == 1 ? matches[0] :
             throw new InvalidOperationException("La macro cible est introuvable ou son identifiant est dupliqué.");
     }
+
+    private static MacroDefinition FindSystemTargetMacro(IEnumerable<MacroDefinition> macros, MacroAction action) =>
+        FindSystemTargetMacro(macros, action.Target);
 
     private static MacroAction FindJumpTargetAction(MacroDefinition macro, MacroAction action)
     {
@@ -1155,6 +1196,9 @@ public partial class MainWindow
                             case ConditionalJumpMode.GotoAction:
                                 var targetAction = FindConditionalJumpTargetAction(ownerMacro, targetId, branch);
                                 return $"action {ownerMacro.Actions.IndexOf(targetAction) + 1}";
+                            case ConditionalJumpMode.GotoMacro:
+                                var targetMacro = FindSystemTargetMacro(macros, targetId);
+                                return $"macro « {targetMacro.Name} »";
                             default:
                                 return "mode invalide";
                         }

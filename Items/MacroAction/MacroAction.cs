@@ -167,5 +167,6 @@ public enum ConditionalJumpMode
 {
     GotoAction,
     Continue,
-    Stop
+    Stop,
+    GotoMacro
 }

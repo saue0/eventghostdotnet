@@ -28,7 +28,9 @@ Les actions système sont proposées lors de l’ajout d’une action à une mac
 | **Activer un élément** / **Désactiver un élément** | Active ou désactive un groupe, une macro, un événement, une action ou un démarrage de plugin. |
 | **Jump** | Appelle une macro puis arrête la séquence courante, appelle une macro puis reprend cette séquence, ou saute à une action de la macro courante. |
 | **If** | Compare le résultat de l’action précédente avec une valeur, sans tenir compte de la casse (`Est égale à`, `Contient`, `Est différente de`). Si la condition est fausse, l’action suivante est sautée. |
-| **If / Jump / Else Jump** | Compare le résultat de l’action précédente puis applique la branche « Si vrai » ou « Sinon » : sauter à une action de la macro courante, continuer à l’action suivante ou arrêter la macro. |
+| **If / Jump / Else Jump** | Compare le résultat de l’action précédente puis applique la branche « Si vrai » ou « Sinon » : sauter à une action de la macro courante, sauter à une autre macro (exécutée puis arrêt de la macro courante), continuer à l’action suivante ou arrêter la macro. |
+
+Les branches « Si vrai » et « Sinon » de **If / Jump / Else Jump** choisissent chacune leur mode indépendamment. Un saut vers une action reste dans la macro courante ; un saut vers une macro est conservé lors d’un copier/coller ou d’un déplacement de l’action, et la duplication d’une macro remappe la cible vers la copie lorsqu’elle désignait la macro dupliquée.
 
 Les actions **Journaliser**, **Afficher un message**, **Afficher une notification**, **Question Oui/Non**, **Ouvrir une URL** et **Déclencher un événement** (payload uniquement) développent les variables suivantes dans leur texte (et dans le titre de la notification ou de la question) :
 

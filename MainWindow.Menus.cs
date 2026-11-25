@@ -998,12 +998,30 @@ public partial class MainWindow
                 action.Target = mappedGroupId.ToString();
             if (action.Kind == MacroActionKind.IfJump)
             {
-                if (Guid.TryParse(action.Target, out var ifTargetId) &&
-                    actionIds.TryGetValue(ifTargetId, out var mappedIfTargetId))
-                    action.Target = mappedIfTargetId.ToString();
-                if (Guid.TryParse(action.ElseTarget, out var elseTargetId) &&
-                    actionIds.TryGetValue(elseTargetId, out var mappedElseTargetId))
-                    action.ElseTarget = mappedElseTargetId.ToString();
+                if ((action.IfBranchMode ?? ConditionalJumpMode.GotoAction) == ConditionalJumpMode.GotoAction)
+                {
+                    if (Guid.TryParse(action.Target, out var ifTargetId) &&
+                        actionIds.TryGetValue(ifTargetId, out var mappedIfTargetId))
+                        action.Target = mappedIfTargetId.ToString();
+                }
+                else if (action.IfBranchMode == ConditionalJumpMode.GotoMacro &&
+                         Guid.TryParse(action.Target, out var ifMacroTargetId) &&
+                         macroIds.TryGetValue(ifMacroTargetId, out var mappedIfMacroId))
+                {
+                    action.Target = mappedIfMacroId.ToString();
+                }
+                if ((action.ElseBranchMode ?? ConditionalJumpMode.GotoAction) == ConditionalJumpMode.GotoAction)
+                {
+                    if (Guid.TryParse(action.ElseTarget, out var elseTargetId) &&
+                        actionIds.TryGetValue(elseTargetId, out var mappedElseTargetId))
+                        action.ElseTarget = mappedElseTargetId.ToString();
+                }
+                else if (action.ElseBranchMode == ConditionalJumpMode.GotoMacro &&
+                         Guid.TryParse(action.ElseTarget, out var elseMacroTargetId) &&
+                         macroIds.TryGetValue(elseMacroTargetId, out var mappedElseMacroId))
+                {
+                    action.ElseTarget = mappedElseMacroId.ToString();
+                }
             }
         }
     }
