@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Windows.Threading;
+using EventGhostDotNet.Core.Macros;
 
 namespace EventGhostDotNet;
 
@@ -7,6 +8,47 @@ public partial class MainWindow
 {
     private readonly Dictionary<string, JsonElement> _scriptVariables = new(StringComparer.Ordinal);
     private readonly object _scriptVariablesLock = new();
+
+    /// <summary>Développe les jetons <c>{{$eg.…}}</c> d'un texte d'action.</summary>
+    private string ExpandActionTemplate(string template, object? previousResult, TriggerEvent? triggerEvent) =>
+        MacroTemplate.Expand(template, path => ResolveActionTemplateValue(path, previousResult, triggerEvent));
+
+    private string? ResolveActionTemplateValue(
+        string path, object? previousResult, TriggerEvent? triggerEvent)
+    {
+        var separator = path.IndexOf('.');
+        var root = separator < 0 ? path : path[..separator];
+        var remainder = separator < 0 ? string.Empty : path[(separator + 1)..];
+
+        if (string.Equals(root, "result", StringComparison.OrdinalIgnoreCase))
+            return MacroValueFormatter.Format(previousResult) ?? string.Empty;
+
+        if (string.Equals(root, "event", StringComparison.OrdinalIgnoreCase))
+        {
+            if (remainder.Length == 0)
+                return triggerEvent is null ? string.Empty : JsonSerializer.Serialize(triggerEvent);
+            if (string.Equals(remainder, "name", StringComparison.OrdinalIgnoreCase))
+                return triggerEvent?.Name ?? string.Empty;
+            if (string.Equals(remainder, "payload", StringComparison.OrdinalIgnoreCase))
+                return triggerEvent?.Payload ?? string.Empty;
+            if (string.Equals(remainder, "sourceid", StringComparison.OrdinalIgnoreCase))
+                return triggerEvent?.SourceId ?? string.Empty;
+            return null;
+        }
+
+        if (string.Equals(root, "variable", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(root, "variables", StringComparison.OrdinalIgnoreCase))
+        {
+            if (remainder.Length == 0)
+                return null;
+            lock (_scriptVariablesLock)
+                return _scriptVariables.TryGetValue(remainder, out var value)
+                    ? MacroValueFormatter.Format(value) ?? string.Empty
+                    : string.Empty;
+        }
+
+        return null;
+    }
 
     private async Task<object?> ExecuteScriptRequestAsync(ActionContext context, JsonElement request)
     {

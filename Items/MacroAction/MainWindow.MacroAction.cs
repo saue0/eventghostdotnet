@@ -22,6 +22,10 @@ namespace EventGhostDotNet;
 
 public partial class MainWindow
 {
+    private const string TemplateVariableHint =
+        "Variables : {{$eg.result}} (action précédente), {{$eg.event.name}}, " +
+        "{{$eg.event.payload}}, {{$eg.event.sourceId}}, {{$eg.variable.Nom}}.";
+
     private async void AddAction_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedMacro is not MacroDefinition macro)
@@ -127,14 +131,16 @@ public partial class MainWindow
             return PromptForSystemAction(kind, existing);
         if (kind == MacroActionKind.AskYesNo)
             return PromptForYesNoAction(existing);
+        if (kind == MacroActionKind.Notify)
+            return PromptForNotificationAction(existing);
+        if (kind == MacroActionKind.ShowMessage)
+            return PromptForMessageAction(existing);
 
         var isEditing = existing is not null;
         var value = kind switch
         {
             MacroActionKind.Delay => PromptForText(isEditing ? "Modifier l'action d'attente" : "Action d'attente",
                 "Durée en millisecondes (0 à 600000) :", existing?.Value ?? "1000"),
-            MacroActionKind.ShowMessage => PromptForText(isEditing ? "Modifier l'action de message" : "Action de message",
-                "Message à afficher :", existing?.Value ?? string.Empty),
             MacroActionKind.OpenUrl => PromptForText(isEditing ? "Modifier l'action d'ouverture d'URL" : "Action d'ouverture d'URL",
                 "URL HTTP ou HTTPS :", existing?.Value ?? "https://"),
             MacroActionKind.Beep => existing?.Value ?? string.Empty,
@@ -154,7 +160,8 @@ public partial class MainWindow
         }
 
         if (kind == MacroActionKind.OpenUrl &&
-            (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")))
+            (!Uri.TryCreate(MacroTemplate.Expand(value, _ => "x"), UriKind.Absolute, out var uri) ||
+             uri.Scheme is not ("http" or "https")))
         {
             MessageBox.Show(this, "Saisissez une URL absolue commençant par http:// ou https://.", "URL invalide",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -214,6 +221,148 @@ public partial class MainWindow
 
         return dialog.ShowDialog() == true
             ? new MacroAction { Kind = MacroActionKind.AskYesNo, Value = question.Text, Target = title.Text }
+            : null;
+    }
+
+    private MacroAction? PromptForNotificationAction(MacroAction? existing)
+    {
+        var dialog = new Window
+        {
+            Title = existing is null ? "Afficher une notification" : "Modifier la notification",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+            Padding = new Thickness(16)
+        };
+        var panel = new StackPanel { Width = 460 };
+        panel.Children.Add(new TextBlock { Text = "Titre (facultatif) :", Margin = new Thickness(0, 0, 0, 5) });
+        var title = new TextBox
+        {
+            Text = existing?.Target ?? string.Empty,
+            Padding = new Thickness(6),
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        panel.Children.Add(title);
+        panel.Children.Add(new TextBlock { Text = "Message :", Margin = new Thickness(0, 0, 0, 5) });
+        var message = new TextBox
+        {
+            Text = existing?.Value ?? string.Empty,
+            Padding = new Thickness(6),
+            Height = 90,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        panel.Children.Add(message);
+        panel.Children.Add(new TextBlock
+        {
+            Text = TemplateVariableHint,
+            Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 12)
+        });
+        panel.Children.Add(new TextBlock { Text = "Clé de remplacement (facultatif) :", Margin = new Thickness(0, 0, 0, 5) });
+        var notificationKey = new TextBox
+        {
+            Text = existing?.NotificationKey ?? string.Empty,
+            Padding = new Thickness(6),
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        panel.Children.Add(notificationKey);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Une notification de même clé remplace la précédente au lieu de s'empiler.",
+            Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 12)
+        });
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
+        var save = new Button { Content = "Enregistrer", IsDefault = true };
+        save.Click += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(message.Text))
+            {
+                MessageBox.Show(dialog, "Saisissez le texte de la notification.", "Message requis",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        buttons.Children.Add(save);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+
+        return dialog.ShowDialog() == true
+            ? new MacroAction
+            {
+                Kind = MacroActionKind.Notify,
+                Value = message.Text,
+                Target = title.Text.Trim(),
+                NotificationKey = string.IsNullOrWhiteSpace(notificationKey.Text)
+                    ? null
+                    : notificationKey.Text.Trim()
+            }
+            : null;
+    }
+
+    private MacroAction? PromptForMessageAction(MacroAction? existing)
+    {
+        var dialog = new Window
+        {
+            Title = existing is null ? "Action de message" : "Modifier l'action de message",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+            Padding = new Thickness(16)
+        };
+        var panel = new StackPanel { Width = 460 };
+        panel.Children.Add(new TextBlock { Text = "Message à afficher :", Margin = new Thickness(0, 0, 0, 5) });
+        var message = new TextBox
+        {
+            Text = existing?.Value ?? string.Empty,
+            Padding = new Thickness(6),
+            Height = 110,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        panel.Children.Add(message);
+        panel.Children.Add(new TextBlock
+        {
+            Text = TemplateVariableHint,
+            Foreground = EventGhostDotNet.Theme.AppTheme.GetBrush("MutedTextBrush", Brushes.Gray),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 12)
+        });
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(new Button { Content = "Annuler", IsCancel = true });
+        var save = new Button { Content = "Enregistrer", IsDefault = true };
+        save.Click += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(message.Text))
+            {
+                MessageBox.Show(dialog, "Saisissez le message à afficher.", "Message requis",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        buttons.Children.Add(save);
+        panel.Children.Add(buttons);
+        dialog.Content = panel;
+
+        return dialog.ShowDialog() == true
+            ? new MacroAction
+            {
+                Kind = MacroActionKind.ShowMessage,
+                Value = message.Text,
+                Target = existing?.Target ?? string.Empty
+            }
             : null;
     }
 
@@ -1363,6 +1512,7 @@ public partial class MainWindow
             new(MacroActionKind.Delay, "Attendre"),
             new(MacroActionKind.Beep, "Signal sonore"),
             new(MacroActionKind.ShowMessage, "Afficher un message"),
+            new(MacroActionKind.Notify, "Afficher une notification"),
             new(MacroActionKind.AskYesNo, "Question Oui/Non"),
             new(MacroActionKind.Stop, "Arrêter la macro"),
             new(MacroActionKind.OpenUrl, "Ouvrir une URL"),

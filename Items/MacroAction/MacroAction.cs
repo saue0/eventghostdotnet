@@ -37,6 +37,8 @@ public sealed class MacroAction : ConfigurationItem
     public LogLevel? LogLevel { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? InstanceId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NotificationKey { get; set; }
 
     [JsonIgnore]
     public string? PluginDisplayName
@@ -72,6 +74,7 @@ public sealed class MacroAction : ConfigurationItem
         MacroActionKind.Beep => "Émettre un signal sonore",
         MacroActionKind.RaiseEvent => $"Déclencher l'événement : {Target}",
         MacroActionKind.ShowMessage => $"Afficher un message : {Value}",
+        MacroActionKind.Notify => $"Afficher une notification : {Value.Split(['\r', '\n'], 2)[0]}",
         MacroActionKind.AskYesNo => $"Question Oui/Non : {Value}",
         MacroActionKind.Stop => "Arrêter la macro",
         MacroActionKind.OpenUrl => $"Ouvrir l'URL : {Value}",
@@ -103,6 +106,7 @@ public enum MacroActionKind
     Delay,
     Beep,
     ShowMessage,
+    Notify,
     AskYesNo,
     Stop,
     OpenUrl,

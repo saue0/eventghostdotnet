@@ -299,7 +299,9 @@ public partial class MainWindow
                 switch (action.Kind)
                 {
                     case MacroActionKind.Log:
-                        actionContext.Log(action.Value, action.LogLevel ?? LogLevel.Information);
+                        var logMessage = ExpandActionTemplate(action.Value, previousActionResult, triggerEvent);
+                        actionContext.Result = logMessage;
+                        actionContext.Log(logMessage, action.LogLevel ?? LogLevel.Information);
                         break;
                     case MacroActionKind.Delay:
                         await Task.Delay(MacroExecutionLimits.ParseDelay(action.Value), cancellationToken);
@@ -308,14 +310,34 @@ public partial class MainWindow
                         System.Media.SystemSounds.Beep.Play();
                         break;
                     case MacroActionKind.ShowMessage:
-                        MessageBox.Show(this, action.Value, macro.Name, MessageBoxButton.OK, MessageBoxImage.Information);
+                        var message = ExpandActionTemplate(action.Value, previousActionResult, triggerEvent);
+                        actionContext.Result = message;
+                        MessageBox.Show(this, message, macro.Name, MessageBoxButton.OK, MessageBoxImage.Information);
+                        break;
+                    case MacroActionKind.Notify:
+                        if (string.IsNullOrWhiteSpace(action.Value))
+                            throw new InvalidOperationException("Le texte de la notification est vide.");
+                        var notificationMessage = ExpandActionTemplate(action.Value, previousActionResult, triggerEvent);
+                        var notificationTitle = string.IsNullOrWhiteSpace(action.Target)
+                            ? macro.Name
+                            : ExpandActionTemplate(action.Target, previousActionResult, triggerEvent);
+                        if (System.Windows.Application.Current is not App app)
+                            throw new InvalidOperationException("L'application de notification n'est pas disponible.");
+                        var notificationKey = string.IsNullOrWhiteSpace(action.NotificationKey)
+                            ? null
+                            : ExpandActionTemplate(action.NotificationKey, previousActionResult, triggerEvent);
+                        app.ShowNotification(notificationTitle, notificationMessage, notificationKey);
+                        actionContext.Result = notificationMessage;
                         break;
                     case MacroActionKind.AskYesNo:
-                        if (string.IsNullOrWhiteSpace(action.Value))
+                        var question = ExpandActionTemplate(action.Value, previousActionResult, triggerEvent);
+                        if (string.IsNullOrWhiteSpace(question))
                             throw new InvalidOperationException("La question est vide.");
                         cancellationToken.ThrowIfCancellationRequested();
-                        var answer = MessageBox.Show(this, action.Value,
-                            string.IsNullOrWhiteSpace(action.Target) ? macro.Name : action.Target,
+                        var questionTitle = string.IsNullOrWhiteSpace(action.Target)
+                            ? macro.Name
+                            : ExpandActionTemplate(action.Target, previousActionResult, triggerEvent);
+                        var answer = MessageBox.Show(this, question, questionTitle,
                             MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
                         cancellationToken.ThrowIfCancellationRequested();
                         actionContext.Result = answer == MessageBoxResult.Yes ? "Oui" : "Non";
@@ -324,8 +346,10 @@ public partial class MainWindow
                         nextActionIndex = actionIds.Length;
                         break;
                     case MacroActionKind.OpenUrl:
-                        if (!MacroExecutionLimits.IsAllowedUrl(action.Value, out var uri))
-                            throw new InvalidOperationException($"URL non autorisée : {action.Value}");
+                        var url = ExpandActionTemplate(action.Value, previousActionResult, triggerEvent);
+                        if (!MacroExecutionLimits.IsAllowedUrl(url, out var uri))
+                            throw new InvalidOperationException($"URL non autorisée : {url}");
+                        actionContext.Result = url;
                         Process.Start(new ProcessStartInfo(uri!.AbsoluteUri) { UseShellExecute = true });
                         break;
                     case MacroActionKind.PowerShell:
@@ -335,8 +359,11 @@ public partial class MainWindow
                     case MacroActionKind.RaiseEvent:
                         if (string.IsNullOrWhiteSpace(action.Target))
                             throw new InvalidOperationException("Le nom de l'événement est vide.");
-                        actionContext.RaiseEvent(action.Target,
-                            string.IsNullOrEmpty(action.Value) ? null : action.Value);
+                        var payload = string.IsNullOrEmpty(action.Value)
+                            ? null
+                            : ExpandActionTemplate(action.Value, previousActionResult, triggerEvent);
+                        actionContext.Result = payload;
+                        actionContext.RaiseEvent(action.Target, payload);
                         break;
                     case MacroActionKind.Plugin:
                         var plugin = _pluginRuntime.Find(action.PluginId)

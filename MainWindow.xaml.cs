@@ -1513,7 +1513,7 @@ public partial class MainWindow : Window
                      .Concat(configuration.StartupActions))
         {
             if (action.Kind is not (MacroActionKind.Log or MacroActionKind.Delay or MacroActionKind.Beep or
-                MacroActionKind.ShowMessage or MacroActionKind.AskYesNo or MacroActionKind.Stop or
+                MacroActionKind.ShowMessage or MacroActionKind.Notify or MacroActionKind.AskYesNo or MacroActionKind.Stop or
                 MacroActionKind.OpenUrl or MacroActionKind.PowerShell or MacroActionKind.Plugin or
                 MacroActionKind.EnableMacro or MacroActionKind.DisableMacro or MacroActionKind.EnableAction or MacroActionKind.DisableAction or
                 MacroActionKind.ActivateItem or MacroActionKind.DeactivateItem or

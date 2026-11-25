@@ -19,14 +19,28 @@ Les actions système sont proposées lors de l’ajout d’une action à une mac
 | **Attendre** | Suspend la séquence pendant une durée en millisecondes, de 0 à 600 000. |
 | **Signal sonore** | Émet le signal sonore Windows. |
 | **Afficher un message** | Affiche une boîte de dialogue avec un message. |
+| **Afficher une notification** | Affiche une notification dans le coin inférieur droit de l’écran, sans boîte de dialogue. Le titre est facultatif (nom de la macro par défaut). Une clé de remplacement facultative met à jour la notification existante de même clé. |
 | **Question Oui/Non** | Pose une question ; le résultat transmis à l’action suivante est `Oui` ou `Non`. |
 | **Arrêter la macro** | Termine la séquence en cours. |
 | **Ouvrir une URL** | Ouvre une URL `http` ou `https` dans le navigateur par défaut. |
 | **Script PowerShell** | Exécute un script PowerShell. Le contexte `$eg` permet notamment de journaliser, de définir un résultat et de déclencher un événement. |
-| **Déclencher un événement** | Émet un nom d’événement et un payload facultatif. Les macros associées à cet événement sont déclenchées. |
+| **Déclencher un événement** | Émet un nom d’événement et un payload facultatif. Le payload accepte les variables. Les macros associées à cet événement sont déclenchées. |
 | **Activer un élément** / **Désactiver un élément** | Active ou désactive un groupe, une macro, un événement, une action ou un démarrage de plugin. |
 | **Jump** | Appelle une macro puis arrête la séquence courante, appelle une macro puis reprend cette séquence, ou saute à une action de la macro courante. |
 | **If** | Compare le résultat de l’action précédente avec une valeur, sans tenir compte de la casse (`Est égale à`, `Contient`, `Est différente de`). Si la condition est fausse, l’action suivante est sautée. |
+
+Les actions **Journaliser**, **Afficher un message**, **Afficher une notification**, **Question Oui/Non**, **Ouvrir une URL** et **Déclencher un événement** (payload uniquement) développent les variables suivantes dans leur texte (et dans le titre de la notification ou de la question) :
+
+| Jeton | Valeur |
+| --- | --- |
+| `{{$eg.result}}` | Résultat de l’action précédente (vide s’il n’y en a pas). |
+| `{{$eg.event.name}}` | Nom de l’événement déclencheur. |
+| `{{$eg.event.payload}}` | Payload de l’événement déclencheur. |
+| `{{$eg.event.sourceId}}` | Source de l’événement déclencheur. |
+| `{{$eg.event}}` | Événement déclencheur complet, au format JSON. |
+| `{{$eg.variable.Nom}}` | Variable de session définie par `$eg.SetVariable` (nom sensible à la casse). |
+
+Un jeton inconnu est laissé tel quel ; une valeur absente est remplacée par du texte vide. Les jetons peuvent être entourés d’espaces et `$eg` ne tient pas compte de la casse. Pour **Ouvrir une URL**, le texte est développé avant la validation : l’URL finale doit commencer par `http://` ou `https://`. La clé de remplacement d’une notification est développée de la même manière.
 
 ## Événements
 
