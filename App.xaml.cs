@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using EventGhostDotNet.Platform.Windows;
+using EventGhostDotNet.PluginContracts;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 
@@ -9,14 +10,12 @@ namespace EventGhostDotNet;
 
 public partial class App : Application
 {
-    private static readonly object ErrorLogLock = new();
+    private const string SmokeTestArgument = "--smoke-test";
+
     private SingleInstanceGuard? _singleInstance;
     private NotificationService? _notifications;
 
-    internal static string ErrorLogPath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "EventGhostDotNet",
-        "errors.log");
+    internal static string ErrorLogPath => DiagnosticLog.ErrorLogPath;
 
     public App()
     {
@@ -28,6 +27,14 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        if (e.Args.Any(argument =>
+                string.Equals(argument, SmokeTestArgument, StringComparison.OrdinalIgnoreCase)))
+        {
+            Shutdown(RunSmokeTest());
+            return;
+        }
+
         Theme.AppTheme.Apply();
 
         _singleInstance = SingleInstanceGuard.TryAcquire(() =>
@@ -41,6 +48,33 @@ public partial class App : Application
         var window = new MainWindow(WindowsStartupRegistration.RequestsMinimizedStartup(e.Args));
         MainWindow = window;
         window.Show();
+    }
+
+    /// <summary>
+    /// Mode diagnostic sans interface, utilisé par la CI : charge les plugins du dossier de
+    /// l'application, écrit le résultat sur la sortie standard et sort avec 0 en cas de succès.
+    /// </summary>
+    private static int RunSmokeTest()
+    {
+        var runtime = new PluginRuntime();
+        var errors = 0;
+        runtime.Load(Path.Combine(AppContext.BaseDirectory, "Plugins"), (message, level) =>
+        {
+            if (level == LogLevel.Error)
+                errors++;
+            Console.WriteLine($"{level} : {message}");
+        });
+
+        var plugins = runtime.Plugins
+            .Select(plugin => plugin.Id)
+            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        Console.WriteLine($"Plugins chargés : {plugins.Length} ({string.Join(", ", plugins)})");
+        Console.Out.Flush();
+
+        if (plugins.Length == 0)
+            Console.Error.WriteLine("Aucun plugin n'a été chargé.");
+        return errors == 0 && plugins.Length > 0 ? 0 : 1;
     }
 
     internal void ShowNotification(string title, string message, string? key = null) =>
@@ -98,11 +132,12 @@ public partial class App : Application
 
     private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
-        if (e.ExceptionObject is Exception exception)
-            LogError(exception, "Exception non gérée (processus)");
-        else
-            LogError(new InvalidOperationException(e.ExceptionObject?.ToString() ?? "Exception inconnue"),
-                "Exception non gérée (processus)");
+        const string source = "Exception non gérée (processus)";
+        var exception = e.ExceptionObject as Exception ??
+                        new InvalidOperationException(e.ExceptionObject?.ToString() ?? "Exception inconnue");
+        LogError(exception, source);
+        if (e.IsTerminating)
+            WindowsEventLog.WriteFatal(source, exception, ErrorLogPath);
     }
 
     private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
@@ -111,27 +146,6 @@ public partial class App : Application
         e.SetObserved();
     }
 
-    internal static void LogError(Exception exception, string source)
-    {
-        try
-        {
-            var directory = Path.GetDirectoryName(ErrorLogPath);
-            if (!string.IsNullOrEmpty(directory))
-                Directory.CreateDirectory(directory);
-
-            lock (ErrorLogLock)
-            {
-                var file = new FileInfo(ErrorLogPath);
-                if (file.Exists && file.Length > 1_000_000)
-                    File.Move(ErrorLogPath, ErrorLogPath + ".old", true);
-                File.AppendAllText(ErrorLogPath,
-                    $"[{DateTimeOffset.Now:O}] {source}{Environment.NewLine}{exception}{Environment.NewLine}{Environment.NewLine}");
-            }
-        }
-        catch (Exception logException) when (logException is IOException or UnauthorizedAccessException or
-                                               NotSupportedException or System.Security.SecurityException)
-        {
-            // Le journal ne doit jamais faire échouer le gestionnaire d'exceptions.
-        }
-    }
+    internal static void LogError(Exception exception, string source) =>
+        DiagnosticLog.WriteError(DateTimeOffset.Now, source, exception);
 }

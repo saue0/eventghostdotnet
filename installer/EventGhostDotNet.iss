@@ -55,5 +55,11 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 Name: "{autoprograms}\EventGhost .NET"; Filename: "{app}\EventGhostDotNet.exe"
 Name: "{autodesktop}\EventGhost .NET"; Filename: "{app}\EventGhostDotNet.exe"; Tasks: desktopicon
 
+; Source du journal des événements Windows utilisée pour les exceptions fatales.
+; EventLogMessages.dll fournit le message générique qui affiche le texte de l'entrée.
+[Registry]
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Services\EventLog\Application\EventGhostDotNet"; ValueType: string; ValueName: "EventMessageFile"; ValueData: "{sys}\Microsoft.NET\Framework64\v4.0.30319\EventLogMessages.dll"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Services\EventLog\Application\EventGhostDotNet"; ValueType: dword; ValueName: "TypesSupported"; ValueData: "7"
+
 [Run]
 Filename: "{app}\EventGhostDotNet.exe"; Description: "{cm:LaunchProgram,EventGhost .NET}"; Flags: nowait postinstall skipifsilent

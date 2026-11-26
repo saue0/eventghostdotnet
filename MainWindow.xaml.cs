@@ -1435,6 +1435,66 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ShowLogPreview_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new LogPreviewWindow
+        {
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        window.ShowDialog();
+    }
+
+    private void OpenLogFolder_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(DiagnosticLog.LogDirectory);
+            Process.Start(new ProcessStartInfo(DiagnosticLog.LogDirectory) { UseShellExecute = true });
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+                                           Win32Exception or InvalidOperationException)
+        {
+            MessageBox.Show(this, $"Impossible d'ouvrir le dossier des journaux.\n\n{exception.Message}",
+                "Dossier des journaux", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void CopyLogPath_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Clipboard.SetText(DiagnosticLog.LogDirectory);
+            StatusText.Text = "Chemin des journaux copié.";
+        }
+        catch (Exception exception) when (exception is ExternalException or InvalidOperationException)
+        {
+            MessageBox.Show(this, $"Impossible de copier le chemin des journaux.\n\n{exception.Message}",
+                "Journaux de diagnostic", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void ClearDiagnosticLogs_Click(object sender, RoutedEventArgs e)
+    {
+        var answer = MessageBox.Show(this,
+            "Supprimer les journaux de diagnostic (fichiers courants et archives) ?\n\n" +
+            DiagnosticLog.LogDirectory,
+            "Journaux de diagnostic", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (answer != MessageBoxResult.Yes)
+            return;
+
+        if (!DiagnosticLog.Clear())
+        {
+            MessageBox.Show(this,
+                "Certains fichiers de journal n'ont pas pu être supprimés. Ils sont peut-être ouverts " +
+                "dans un autre programme.",
+                "Journaux de diagnostic", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        WriteLog("Journaux de diagnostic vidés.");
+    }
+
     private void About_Click(object sender, RoutedEventArgs e)
     {
         MessageBox.Show(this,
@@ -1950,13 +2010,15 @@ public partial class MainWindow : Window
         LogCategory category = LogCategory.General, int indentLevel = 0, string? payload = null,
         string? sourceId = null)
     {
-        var entry = new EventLogEntry(DateTime.Now, message, eventName, formatter ?? new AnsiLogFormatter(),
+        var timestamp = DateTime.Now;
+        var entry = new EventLogEntry(timestamp, message, eventName, formatter ?? new AnsiLogFormatter(),
             level, category, indentLevel, payload, sourceId);
         entry.RefreshDisplay(ShowLogTimeMenuItem.IsChecked == true,
             DateStampLogMenuItem.IsChecked == true, IndentLogMenuItem.IsChecked == true);
         _logEntries.Add(entry);
         while (_logEntries.Count > 5000)
             _logEntries.RemoveAt(0);
+        DiagnosticLog.Write(timestamp, level, category.ToString(), indentLevel, message);
         ScrollLogToEnd();
     }
 

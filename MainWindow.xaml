@@ -190,6 +190,10 @@
                 <MenuItem Header="_Préférences de démarrage" Click="StartupPreferences_Click"/>
                 <MenuItem Header="Préférences _PowerShell..." Click="PowerShellPreferences_Click"/>
                 <MenuItem Header="Vérifier les _mises à jour..." Click="CheckForUpdates_Click"/>
+                <MenuItem Header="_Aperçu du journal de diagnostic..." Click="ShowLogPreview_Click"/>
+                <MenuItem Header="Ouvrir le dossier des _journaux" Click="OpenLogFolder_Click"/>
+                <MenuItem Header="Copier le _chemin des journaux" Click="CopyLogPath_Click"/>
+                <MenuItem Header="_Vider les journaux de diagnostic..." Click="ClearDiagnosticLogs_Click"/>
                 <Separator/>
                 <MenuItem Header="_Quitter" Click="Exit_Click"/>
             </MenuItem>
