@@ -1,6 +1,7 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Windows;
 using EventGhostDotNet.PluginContracts;
+using EventGhostDotNet.Core.Macros;
 using Clipboard = System.Windows.Clipboard;
 using MessageBox = System.Windows.MessageBox;
 

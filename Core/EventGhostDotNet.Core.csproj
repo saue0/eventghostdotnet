@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PluginContracts\PluginContracts.csproj" />
+    <InternalsVisibleTo Include="EventGhostDotNet" />
   </ItemGroup>
 
 </Project>

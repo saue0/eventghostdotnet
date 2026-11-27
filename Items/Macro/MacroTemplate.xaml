@@ -1,8 +1,11 @@
 <ResourceDictionary x:Class="EventGhostDotNet.Items.Macro.MacroTemplate"
                     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:local="clr-namespace:EventGhostDotNet">
-    <HierarchicalDataTemplate DataType="{x:Type local:MacroDefinition}" ItemsSource="{Binding TreeChildren}">
+                    xmlns:local="clr-namespace:EventGhostDotNet"
+                    xmlns:core="clr-namespace:EventGhostDotNet;assembly=EventGhostDotNet.Core">
+    <local:TreeChildrenConverter x:Key="TreeChildrenConverter"/>
+    <HierarchicalDataTemplate DataType="{x:Type core:MacroDefinition}"
+                              ItemsSource="{Binding Converter={StaticResource TreeChildrenConverter}}">
         <StackPanel Orientation="Horizontal">
             <ContentControl Style="{DynamicResource ConfigurationItemIcon}" Tag="&#xE713;"
                             IsEnabled="{Binding IsEnabled}" Foreground="{DynamicResource MacroTextBrush}"

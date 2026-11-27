@@ -39,4 +39,4 @@
 
 ## Priorité 5 — Refactor de fond
 
-- [ ] **Extraire le moteur de macros** — sortir l'orchestration encore dans `MainWindow` (~6 000 lignes de partials) vers un service testable ; seules les règles pures sont dans `Core`.
+- [x] **Extraire le moteur de macros** — les modèles d'items (`ConfigurationItem`, `ConfigurationRoot`, `StartupSection`, `MacroGroup`, `MacroDefinition`, `MacroEvent`, `MacroAction`, `PluginStartupConfiguration`) vivent dans `Core/Items` sans WPF ; l'arbre assemble ses enfants via `TreeChildrenConverter`. `MacroEngine` exécute la boucle d'actions, les branches et les sauts derrière `IMacroExecutionHost` (journal, dialogues, notifications, PowerShell, plugins, actions système), avec `MacroExecutionContext`, `MacroNavigation` et `SystemActionExecutor`. `MainWindow` ne garde que le câblage WPF et `ExecuteMacroInSessionAsync`. Vérifié par `MacroEngineTests` et `MacroNavigationTests` avec un hôte factice (123 tests `Core`). *(Core/Items, Core/Macros, MainWindow.MacroHost.cs — L)*

@@ -1,4 +1,4 @@
-using System.Collections.Specialized;
+﻿using System.Collections.Specialized;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using System.Globalization;
 using EventGhostDotNet.PluginContracts;
+using EventGhostDotNet.Core.Macros;
 using Button = System.Windows.Controls.Button;
 using ComboBox = System.Windows.Controls.ComboBox;
 using MessageBox = System.Windows.MessageBox;
@@ -901,7 +902,7 @@ public partial class MainWindow
         action.Id = Guid.NewGuid();
         var targetId = ReferenceEquals(target, _startupMacro) ? "Startup" : target.Id.ToString();
         var requiresSameMacro = action.Kind == MacroActionKind.IfJump
-            ? GetConditionalJumpTargetIds(action).Length > 0
+            ? MacroNavigation.GetConditionalJumpTargetIds(action).Length > 0
             : action.Kind == MacroActionKind.Jump && action.JumpMode == JumpMode.GotoAction;
         if (requiresSameMacro &&
             !string.Equals(payload.SourceId, targetId, StringComparison.OrdinalIgnoreCase))

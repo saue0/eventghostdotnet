@@ -1,10 +1,11 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using EventGhostDotNet.PluginContracts;
+using EventGhostDotNet.Core.Macros;
 using DragDrop = System.Windows.DragDrop;
 using DragDropEffects = System.Windows.DragDropEffects;
 using DragEventArgs = System.Windows.DragEventArgs;
@@ -320,7 +321,7 @@ public partial class MainWindow
         if (source.Actions.Any(other => !ReferenceEquals(other, action) &&
                 ((other.Kind == MacroActionKind.Jump && other.JumpMode == JumpMode.GotoAction &&
                   Guid.TryParse(other.Value, out var jumpId) && jumpId == action.Id) ||
-                 GetConditionalJumpTargetIds(other).Contains(action.Id))))
+                 MacroNavigation.GetConditionalJumpTargetIds(other).Contains(action.Id))))
         {
             reason = "Une action de branchement de la macro actuelle cible cette action.";
             return false;
@@ -333,7 +334,7 @@ public partial class MainWindow
             return false;
         }
         if (action.Kind == MacroActionKind.IfJump &&
-            GetConditionalJumpTargetIds(action).Any(targetId =>
+            MacroNavigation.GetConditionalJumpTargetIds(action).Any(targetId =>
                 targetId != action.Id && !destination.Actions.Any(item => item.Id == targetId)))
         {
             reason = "Les cibles de l'action If / Jump doivent rester dans la même macro.";

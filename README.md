@@ -20,7 +20,7 @@ Dans VS Code, la tâche « Release : arrêter, publier et redémarrer » demande
 dotnet test Tests\EventGhostDotNet.Core.Tests\EventGhostDotNet.Core.Tests.csproj
 ```
 
-Les tests couvrent la logique sans interface de `Core` : journal ANSI, rotation des journaux de diagnostic, migration et version de la configuration, écriture atomique, manifeste de plugins, règles d'exécution des macros, action `If` et comparaison des versions de publication. Ils s'exécutent sans Windows ni WPF. La solution `EventGhostDotNet.sln` regroupe l'application, le contrat, les plugins, `Core` et les tests ; la CI les compile et les exécute sur Windows.
+Les tests couvrent la logique sans interface de `Core` : journal ANSI, rotation des journaux de diagnostic, migration et version de la configuration, écriture atomique, manifeste de plugins, règles d'exécution des macros, action `If`, moteur de macros (séquences, branches, sauts, limites, résultats, annulation) et comparaison des versions de publication. Ils s'exécutent sans Windows ni WPF. La solution `EventGhostDotNet.sln` regroupe l'application, le contrat, les plugins, `Core` et les tests ; la CI les compile et les exécute sur Windows.
 
 ## Publication et installation
 

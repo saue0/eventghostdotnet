@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
-using System.Windows.Data;
 
 namespace EventGhostDotNet;
 
@@ -53,15 +52,10 @@ public sealed class MacroGroup : ConfigurationContainer
     public ObservableCollection<MacroDefinition> Macros { get; }
     [JsonIgnore]
     public ObservableCollection<MacroGroup> Groups { get; }
-    [JsonIgnore]
-    public CompositeCollection TreeChildren { get; }
-
     public MacroGroup()
     {
         Macros = new ConfigurationItemCollection<MacroDefinition>(this);
         Groups = new ConfigurationItemCollection<MacroGroup>(this);
-        TreeChildren = [new CollectionContainer { Collection = Groups },
-            new CollectionContainer { Collection = Macros }];
     }
 
     public override IEnumerable<ConfigurationItem> GetChildren() =>

@@ -1,5 +1,5 @@
 using System.Collections.ObjectModel;
-using System.Windows.Data;
+using System.Text.Json.Serialization;
 
 namespace EventGhostDotNet;
 
@@ -7,15 +7,15 @@ public sealed class ConfigurationRoot : ConfigurationContainer
 {
     public string Name => "Configuration";
     public ObservableCollection<MacroGroup> Groups { get; }
-    public CompositeCollection Children { get; }
+    [JsonIgnore]
+    public StartupSection Startup { get; }
 
     internal ConfigurationRoot(StartupSection startup)
     {
         Groups = new ConfigurationItemCollection<MacroGroup>(this);
+        Startup = startup;
         startup.Parent = this;
-        Children = [startup, new CollectionContainer { Collection = Groups }];
     }
 
-    public override IEnumerable<ConfigurationItem> GetChildren() =>
-        Children.OfType<StartupSection>().Cast<ConfigurationItem>().Concat(Groups);
+    public override IEnumerable<ConfigurationItem> GetChildren() => Groups;
 }

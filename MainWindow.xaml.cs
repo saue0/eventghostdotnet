@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -57,7 +57,6 @@ public partial class MainWindow : Window
     private const string SystemShowEventName = "System.Show";
     private const string SystemHideEventName = "System.Hide";
     private const string SystemExitEventName = "System.Exit";
-    private const int MaximumLogIndentLevel = 64;
 
     private sealed record ActionChoice(
         MacroActionKind Kind, string Name, string? PluginId = null, string? ActionId = null, string? InstanceId = null)
@@ -160,55 +159,22 @@ public partial class MainWindow : Window
     private sealed record JumpModeChoice(JumpMode Mode, string Label);
     private sealed record IfComparisonChoice(IfComparison Comparison, string Label);
     private sealed record ConditionalJumpModeChoice(ConditionalJumpMode Mode, string Label);
-    private sealed record SystemActionResult(
-        string Message, ActivationTargetKind Kind, string Target, string Value, bool PreviousState, bool CurrentState);
 
-    private sealed record TriggerEvent(string Name, string? Payload, string? SourceId);
-
-    private sealed class ActionContext(
-        MainWindow window, CancellationToken sessionToken, object? initialResult, TriggerEvent? triggerEvent = null,
-        int? logIndentLevel = null) : IActionContext
+    private MacroExecutionContext CreateActionContext(
+        CancellationToken sessionToken, object? initialResult = null, TriggerEvent? triggerEvent = null,
+        int? logIndentLevel = null)
     {
-        private readonly object _resultLock = new();
-        private readonly AnsiLogFormatter _logFormatter = new();
-        private object? _result = initialResult;
-        public TriggerEvent? Event => triggerEvent;
-        public MainWindow Window => window;
-        public CancellationToken CancellationToken => sessionToken;
-        public int? LogIndentLevel => logIndentLevel;
-
-        public object? Result
-        {
-            get
-            {
-                lock (_resultLock)
-                    return _result;
-            }
-            set
-            {
-                lock (_resultLock)
-                    _result = value;
-            }
-        }
-
-        public void Log(string message) => Log(message, LogLevel.Information);
-
-        public void Log(string message, LogLevel level)
-        {
-            if (!Enum.IsDefined(level))
-                throw new InvalidOperationException($"Niveau de journal invalide : {level}.");
-            window.Dispatcher.BeginInvoke(new Action(() =>
-                window.WriteLog(message, null, _logFormatter, level, LogCategory.Action, logIndentLevel ?? 1)));
-        }
-
-        public void RaiseEvent(string name, string? payload) => RaiseEventFromSource(name, payload, null);
-
-        public void RaiseEventFromSource(string name, string? payload, string? sourceId) =>
-            window.Dispatcher.BeginInvoke(
-                new Action(() => _ = window.DispatchEventAsync(name, payload, sessionToken, sourceId)));
+        // Un formateur par action : l'état des couleurs ANSI ne doit pas passer d'une action à l'autre.
+        var formatter = new AnsiLogFormatter();
+        return new MacroExecutionContext(
+            sessionToken, initialResult, triggerEvent, logIndentLevel,
+            (message, level, indentLevel) => Dispatcher.BeginInvoke(new Action(() =>
+                WriteLog(message, null, formatter, level, LogCategory.Action, indentLevel ?? 1))),
+            (name, payload, sourceId) => Dispatcher.BeginInvoke(
+                new Action(() => _ = DispatchEventAsync(name, payload, sessionToken, sourceId))));
     }
 
-    private sealed class PluginHost(MainWindow window, ActionContext context, string? sourceId = null) : IPluginHost
+    private sealed class PluginHost(MainWindow window, MacroExecutionContext context, string? sourceId = null) : IPluginHost
     {
         public IPluginUserInterface UserInterface { get; } = new PluginUserInterface(window);
         public IIdleTimeProvider IdleTime => window._platform.IdleTime;
@@ -350,6 +316,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _startMinimizedFromCommandLine = startMinimizedFromCommandLine;
+        _macroEngine = new MacroEngine(this);
         _configurationStore = new ConfigurationStore(_configurationPath, JsonOptions);
         _logView = CollectionViewSource.GetDefaultView(_logEntries);
         _logView.Filter = item => item is EventLogEntry entry && ShouldShowLogEntry(entry);
@@ -718,7 +685,7 @@ public partial class MainWindow : Window
         _pluginRuntime.StartConfiguredAsync(
             PluginStartups,
             (_, _, sourceId) =>
-                new PluginHost(this, new ActionContext(this, _sessionCancellation.Token, null), sourceId),
+                new PluginHost(this, CreateActionContext(_sessionCancellation.Token), sourceId),
             _sessionCancellation.Token,
             WriteLog);
 
@@ -2027,8 +1994,6 @@ public partial class MainWindow : Window
         DiagnosticLog.Write(timestamp, level, category.ToString(), indentLevel, message);
         ScrollLogToEnd();
     }
-
-    private static int NextLogIndentLevel(int level) => Math.Min(level + 1, MaximumLogIndentLevel);
 
     private string? PromptForText(string title, string prompt, string initialValue)
     {

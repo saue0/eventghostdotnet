@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using EventGhostDotNet.PluginContracts;
 using Button = System.Windows.Controls.Button;
@@ -155,7 +155,7 @@ public partial class MainWindow
     {
         try
         {
-            var host = new PluginHost(this, new ActionContext(this, _sessionCancellation.Token, null));
+            var host = new PluginHost(this, CreateActionContext(_sessionCancellation.Token));
             var data = plugin.ConfigureStartup(existing is null ? null : ToPluginStartupData(existing), host);
             if (data is null)
                 return null;

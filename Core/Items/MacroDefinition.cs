@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Windows.Data;
 
 namespace EventGhostDotNet;
 
@@ -16,8 +15,6 @@ public sealed class MacroDefinition : ConfigurationContainer
     private readonly ObservableCollection<MacroEvent> _eventItems;
     private ObservableCollection<MacroAction> _actions;
     private readonly bool _isExecutionContext;
-    private readonly CollectionContainer _eventContainer = new();
-    private readonly CollectionContainer _actionContainer = new();
 
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid GroupId { get; set; }
@@ -55,9 +52,6 @@ public sealed class MacroDefinition : ConfigurationContainer
         _actions = executionActions ?? new ConfigurationItemCollection<MacroAction>(this);
         _eventNames.CollectionChanged += EventNames_CollectionChanged;
         EventItems = new ReadOnlyObservableCollection<MacroEvent>(_eventItems);
-        _eventContainer.Collection = _eventItems;
-        _actionContainer.Collection = _actions;
-        TreeChildren = [_eventContainer, _actionContainer];
     }
 
     public string Name
@@ -124,7 +118,6 @@ public sealed class MacroDefinition : ConfigurationContainer
             if (_isExecutionContext)
             {
                 _actions = value;
-                _actionContainer.Collection = _actions;
                 return;
             }
 
@@ -138,9 +131,6 @@ public sealed class MacroDefinition : ConfigurationContainer
                 _actions.Add(action);
         }
     }
-
-    [JsonIgnore]
-    public CompositeCollection TreeChildren { get; }
 
     // The startup execution context shares actions owned by StartupSection; it is not a tree node.
     public override IEnumerable<ConfigurationItem> GetChildren() =>

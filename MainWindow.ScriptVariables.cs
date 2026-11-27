@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Windows.Threading;
 using EventGhostDotNet.Core.Macros;
 
@@ -50,7 +50,7 @@ public partial class MainWindow
         return null;
     }
 
-    private async Task<object?> ExecuteScriptRequestAsync(ActionContext context, JsonElement request)
+    private async Task<object?> ExecuteScriptRequestAsync(MacroExecutionContext context, JsonElement request)
     {
         var operation = request.GetProperty("Operation").GetString();
         var name = request.GetProperty("Name").GetString();
