@@ -2,7 +2,7 @@
 
 Identifiant du plugin : `Wallpaper`.
 
-Ce plugin fournit deux actions pour appliquer des fonds d'écran : télécharger des images de Bing ou utiliser des images locales.
+Ce plugin fournit trois actions pour appliquer des fonds d'écran : télécharger des images de Bing, utiliser des images locales ou faire tourner les images déjà préparées dans le dossier temporaire.
 
 ## Configuration
 
@@ -14,6 +14,7 @@ Configurez l'action choisie dans une macro ou une séquence de démarrage.
 | --- | --- |
 | **Fond d'écran — Bing du jour** | Télécharge des images de Bing. Configurez l'index de départ (de 0 à 7) et le nombre d'images (de 1 à 8), sans dépasser huit images au total ; l'index 0 correspond à l'image du jour. Chaque image est limitée à 50 Mo. L'ajout des informations système est facultatif. |
 | **Fond d'écran — images locales** | Applique une ou plusieurs images dans l'ordre souhaité. L'ajout des informations système est facultatif. |
+| **Fond d'écran — rotation aléatoire** | Utilise les images déjà préparées dans `%TEMP%\EventGhostDotNet\Wallpaper` et les répartit sur les écrans. L'image de départ est choisie au hasard puis les écrans reçoivent les images suivantes en rotation : avec 3 écrans et 5 images, chaque exécution affiche 3 images différentes et le départ change à chaque passage. Aucune configuration n'est nécessaire. |
 
 ## Événements
 

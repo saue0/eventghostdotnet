@@ -28,6 +28,7 @@ public sealed class WallpaperModule : IPlugin
 {
     private const string ApplyBingActionId = "WallpaperApplyBing";
     private const string ApplyLocalImagesActionId = "WallpaperApplyLocalImages";
+    private const string ApplyRandomActionId = "WallpaperApplyRandom";
     private const int MaximumImageCount = 8;
     private const long MaximumImageBytes = 50 * 1024 * 1024;
     private static readonly Uri BingHost = new("https://www.bing.com/");
@@ -54,7 +55,8 @@ public sealed class WallpaperModule : IPlugin
     public IReadOnlyList<PluginActionDescriptor> Actions { get; } =
     [
         new(ApplyBingActionId, "Fond d'écran — Bing du jour"),
-        new(ApplyLocalImagesActionId, "Fond d'écran — images locales")
+        new(ApplyLocalImagesActionId, "Fond d'écran — images locales"),
+        new(ApplyRandomActionId, "Fond d'écran — rotation aléatoire")
     ];
 
     public PluginActionData? ConfigureAction(
@@ -62,6 +64,8 @@ public sealed class WallpaperModule : IPlugin
     {
         if (actionId == ApplyLocalImagesActionId)
             return ConfigureLocalImagesAction(existing, host);
+        if (actionId == ApplyRandomActionId)
+            return new PluginActionData(actionId, existing?.Value ?? string.Empty, existing?.Target ?? string.Empty);
         if (actionId != ApplyBingActionId)
             throw new InvalidOperationException($"Action Wallpaper inconnue : {actionId}");
 
@@ -311,6 +315,8 @@ public sealed class WallpaperModule : IPlugin
                 return "Images locales — configuration invalide";
             }
         }
+        if (action.ActionId == ApplyRandomActionId)
+            return "Rotation aléatoire — utilise les images préparées dans le dossier temporaire";
         if (action.ActionId != ApplyBingActionId)
             throw new InvalidOperationException($"Action Wallpaper inconnue : {action.ActionId}");
         try
@@ -334,6 +340,11 @@ public sealed class WallpaperModule : IPlugin
             if (action.ActionId == ApplyLocalImagesActionId)
             {
                 await ExecuteLocalImagesAsync(action, host, cancellationToken);
+                return;
+            }
+            if (action.ActionId == ApplyRandomActionId)
+            {
+                ExecuteRandomRotation(host, cancellationToken);
                 return;
             }
             if (action.ActionId != ApplyBingActionId)
@@ -411,6 +422,52 @@ public sealed class WallpaperModule : IPlugin
         host.Log($"Fond d'écran local appliqué sur {monitorCount} écran(s); " +
                  $"{generatedImages.Count} image(s) préparée(s) depuis la liste configurée " +
                  $"{(settings.IncludeSystemInfo ? "avec" : "sans")} ajout d'informations système.");
+    }
+
+    private static void ExecuteRandomRotation(IPluginHost host, CancellationToken cancellationToken)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "EventGhostDotNet", "Wallpaper");
+        var images = GetPreparedImages(directory);
+        if (images.Count == 0)
+            throw new InvalidOperationException(
+                $"Aucune image préparée dans « {directory} ». " +
+                "Exécutez d'abord une action « Bing du jour » ou « images locales ».");
+
+        // Départ aléatoire dans la liste, puis rotation d'une image par écran.
+        var startIndex = Random.Shared.Next(images.Count);
+        var rotated = new string[images.Count];
+        for (var index = 0; index < images.Count; index++)
+            rotated[index] = images[(startIndex + index) % images.Count];
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var monitorCount = SetWallpapers(rotated, cancellationToken);
+        host.Result = true;
+        host.Log($"Rotation aléatoire appliquée sur {monitorCount} écran(s) à partir de " +
+                 $"{images.Count} image(s) préparée(s) dans « {directory} » " +
+                 $"(départ : {Path.GetFileName(rotated[0])}).");
+    }
+
+    private static List<string> GetPreparedImages(string directory)
+    {
+        if (!Directory.Exists(directory))
+            return [];
+        return Directory.EnumerateFiles(directory)
+            .Where(path => IsPreparedImage(Path.GetFileName(path)))
+            .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static bool IsPreparedImage(string fileName)
+    {
+        if (fileName.Contains("_Source", StringComparison.OrdinalIgnoreCase))
+            return false;
+        var isPrepared = fileName.StartsWith("Image_", StringComparison.OrdinalIgnoreCase) ||
+                         fileName.StartsWith("Bing_", StringComparison.OrdinalIgnoreCase) ||
+                         fileName.StartsWith("Local_", StringComparison.OrdinalIgnoreCase);
+        if (!isPrepared)
+            return false;
+        return Path.GetExtension(fileName).ToLowerInvariant() is
+            ".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif" or ".tif" or ".tiff";
     }
 
     private static async Task<string> CreateLocalInfoImageAsync(
