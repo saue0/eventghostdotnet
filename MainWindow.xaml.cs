@@ -1955,6 +1955,13 @@ public partial class MainWindow : Window
 
     private void WriteLog(string message, LogLevel level) => WriteLog(message, null, level: level);
 
+    /// <summary>
+    /// Ligne racine du journal postée dans la file du fil d'interface, comme les lignes des macros
+    /// et des plugins : une écriture directe dépasserait celles qui sont déjà en file.
+    /// </summary>
+    private void PostLog(string message) =>
+        Dispatcher.BeginInvoke(new Action(() => WriteLog(message)));
+
     private void LogList_Loaded(object sender, RoutedEventArgs e) => ScrollLogToEnd();
 
     private void ScrollLogToEnd()

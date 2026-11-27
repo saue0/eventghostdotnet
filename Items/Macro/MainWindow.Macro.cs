@@ -153,19 +153,33 @@ public partial class MainWindow
 
     private async void RunMacro_Click(object sender, RoutedEventArgs e)
     {
+        // Une exécution demandée depuis l'arborescence est une racine du journal : sa ligne part
+        // du niveau zéro et la macro exécutée s'indente d'un cran, ses actions d'un second.
+        const int manualExecutionIndentLevel = 1;
         switch (ConfigurationTree.SelectedItem)
         {
             case MacroDefinition macro:
-                await ExecuteMacroInSessionAsync(macro, _sessionCancellation.Token);
+                PostLog($"Exécution manuelle de la macro « {macro.Name} ».");
+                await ExecuteMacroInSessionAsync(macro, _sessionCancellation.Token,
+                    logIndentLevel: manualExecutionIndentLevel);
                 break;
             case MacroEvent macroEvent:
-                await ExecuteMacroInSessionAsync(macroEvent.Macro, _sessionCancellation.Token);
+                PostLog($"Exécution manuelle de la macro « {macroEvent.Macro.Name} » " +
+                         $"(événement « {macroEvent.Name} »).");
+                await ExecuteMacroInSessionAsync(macroEvent.Macro, _sessionCancellation.Token,
+                    logIndentLevel: manualExecutionIndentLevel);
                 break;
             case MacroAction action:
                 var ownerMacro = Macros.FirstOrDefault(macro => macro.Actions.Contains(action)) ??
                                  (StartupActions.Contains(action) ? _startupMacro : null);
                 if (ownerMacro is not null)
+                {
+                    PostLog($"Exécution manuelle de l'action « {action.DisplayName} » " +
+                             $"de la macro « {ownerMacro.Name} ».");
+                    // Le moteur place déjà l'entrée et les messages d'une action seule au premier
+                    // niveau : ils restent ainsi directement sous la ligne d'exécution manuelle.
                     await ExecuteMacroInSessionAsync(ownerMacro, _sessionCancellation.Token, action.Id);
+                }
                 break;
         }
     }

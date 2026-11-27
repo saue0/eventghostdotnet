@@ -15,10 +15,14 @@ public partial class MainWindow : IMacroExecutionHost
     IReadOnlyList<MacroAction> IMacroExecutionHost.StartupActions => StartupActions;
     IReadOnlyList<PluginStartupConfiguration> IMacroExecutionHost.PluginStartups => PluginStartups;
 
+    // Les lignes de macro passent par la même file que celles des actions et des plugins :
+    // une écriture directe dépasserait les lignes déjà en file et « Macro terminée »
+    // s'afficherait avant les messages de l'action qui vient de s'exécuter.
     void IMacroExecutionHost.Log(string message, LogLevel level, MacroLogCategory category, int indentLevel) =>
-        WriteLog(message, null, level: level,
-            category: category == MacroLogCategory.Macro ? LogCategory.Macro : LogCategory.Action,
-            indentLevel: indentLevel);
+        Dispatcher.BeginInvoke(new Action(() =>
+            WriteLog(message, null, level: level,
+                category: category == MacroLogCategory.Macro ? LogCategory.Macro : LogCategory.Action,
+                indentLevel: indentLevel)));
 
     string IMacroExecutionHost.ExpandTemplate(
         string template, object? previousResult, TriggerEvent? triggerEvent) =>
