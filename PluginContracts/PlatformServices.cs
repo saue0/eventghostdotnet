@@ -66,4 +66,7 @@ public interface ITrayIconService : IDisposable
     void Show(string iconPath, string tooltip);
 
     void SetMenu(IReadOnlyList<TrayMenuItem> items);
+
+    /// <summary>Affiche le menu de l'icône à l'écran, pour une activation au clavier.</summary>
+    void ShowMenu();
 }

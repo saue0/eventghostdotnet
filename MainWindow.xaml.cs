@@ -598,7 +598,7 @@ public partial class MainWindow : Window
         if (_applicationTrayIcon is not null)
             return;
 
-        var trayIcon = new WindowsTrayIconService();
+        var trayIcon = new WindowsTrayIconService(WriteLog);
         trayIcon.Activated += () => RaiseSystemTrayEvent(SystemShowEventName);
         _applicationTrayIcon = trayIcon;
         trayIcon.Show(Path.Combine(AppContext.BaseDirectory, "Assets", "EventGhostDotNet.ico"), "EventGhost .NET");
@@ -635,8 +635,8 @@ public partial class MainWindow : Window
 
         var items = new List<TrayMenuItem>
         {
-            new("Afficher EventGhost", () => RaiseSystemTrayEvent(SystemShowEventName)),
-            new("Masquer EventGhost", () => RaiseSystemTrayEvent(SystemHideEventName)),
+            new("&Afficher EventGhost", () => RaiseSystemTrayEvent(SystemShowEventName)),
+            new("&Masquer EventGhost", () => RaiseSystemTrayEvent(SystemHideEventName)),
             TrayMenuItem.Separator
         };
 
@@ -681,10 +681,16 @@ public partial class MainWindow : Window
 
         if (!items[^1].IsSeparator)
             items.Add(TrayMenuItem.Separator);
-        items.Add(new TrayMenuItem("Historique des notifications",
+        items.Add(new TrayMenuItem("&Historique des notifications",
             () => Dispatcher.BeginInvoke(new Action(OpenNotificationHistory))));
-        items.Add(new TrayMenuItem("Sortie", () => RaiseSystemTrayEvent(SystemExitEventName)));
+        items.Add(new TrayMenuItem("&Sortie", () => RaiseSystemTrayEvent(SystemExitEventName)));
         _applicationTrayIcon.SetMenu(items);
+    }
+
+    private void ShowTrayMenu_Click(object sender, RoutedEventArgs e)
+    {
+        EnsureApplicationTrayIcon();
+        _applicationTrayIcon?.ShowMenu();
     }
 
     private static void OpenNotificationHistory() =>

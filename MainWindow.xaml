@@ -247,6 +247,10 @@
                 <MenuItem Header="Copier la sélection du journal" Command="ApplicationCommands.Copy"
                           CommandTarget="{Binding ElementName=LogList}"/>
                 <MenuItem Header="Effacer le _journal" InputGestureText="Ctrl+L" Click="ClearLog_Click"/>
+                <Separator/>
+                <MenuItem Header="Menu de l'icône de _notification" InputGestureText="Ctrl+Alt+E"
+                          ToolTip="Ctrl+Alt+E ouvre le menu même quand la fenêtre est masquée ; Ctrl+Shift+I fonctionne aussi depuis la fenêtre."
+                          Click="ShowTrayMenu_Click"/>
             </MenuItem>
             <MenuItem Header="_Configuration">
                 <MenuItem Header="Ajouter un _groupe..." InputGestureText="Ctrl+Shift+P" Click="AddMacroGroup_Click"/>
@@ -343,6 +347,8 @@
                     </Border>
                     <ListBox x:Name="LogList" Background="#172033" Foreground="#DDE6F4" BorderThickness="0"
                              FontFamily="Consolas" FontSize="12"
+                             AutomationProperties.Name="Journal des événements"
+                             AutomationProperties.HelpText="Lignes du journal de l'application. Parcourez-les avec les flèches et copiez la sélection avec Ctrl+C."
                              SelectionMode="Extended" ScrollViewer.HorizontalScrollBarVisibility="Auto" Loaded="LogList_Loaded"
                              PreviewMouseLeftButtonDown="LogList_PreviewMouseLeftButtonDown"
                              PreviewMouseLeftButtonUp="LogList_PreviewMouseLeftButtonUp"
@@ -397,6 +403,8 @@
                         <TextBlock Text="Configuration" FontWeight="SemiBold"/>
                     </Border>
                     <TreeView x:Name="ConfigurationTree" Background="{DynamicResource ControlBackgroundBrush}" BorderThickness="0"
+                              AutomationProperties.Name="Arborescence de configuration"
+                              AutomationProperties.HelpText="Groupes, macros, événements, actions et démarrages de plugins. Parcourez l'arborescence avec les flèches."
                               SelectedItemChanged="ConfigurationTree_SelectedItemChanged"
                               ScrollViewer.HorizontalScrollBarVisibility="Auto"
                               ContextMenuOpening="ConfigurationTree_ContextMenuOpening"

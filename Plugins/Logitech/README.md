@@ -28,6 +28,10 @@ Tous les événements commencent par le préfixe configuré dans la section **D�
 | `<préfixe>.WIRELESS_DEVICE_STATUS` | Rapport HID brut en hexadécimal. |
 | `<préfixe>.Change_Host` | Rapport HID brut en hexadécimal. |
 
+## Reprise après veille ou verrouillage
+
+L'écoute ferme la connexion HID dès que la session devient inactive (verrouillage, veille, déconnexion de console) et la rouvre au retour : les fonctions HID++ sont relues et les notifications des appareils sans fil réarmées, sans recharger le plugin. Un changement d'interface HID (récepteur réénuméré, rebranché, appareil réappairé) réarme de la même façon la connexion. La lecture overlapped en attente est annulée (`CancelIoEx` et jeton de connexion), ce qui évite de rester bloqué sur un récepteur suspendu, et la boucle réessaie toutes les 2 s — ou immédiatement au changement d'interface — si le récepteur est indisponible. Les lignes « Session inactive : écoute Logitech suspendue… », « Reprise de session : écoute Logitech réarmée. » et « Périphérique HID modifié : écoute Logitech réarmée. » précèdent la reconnexion, signalée par « Récepteur Logitech connecté. ».
+
 ## Prérequis et limites
 
 - Un récepteur compatible Unifying (C52B) ou Bolt (C548) doit être connecté et détectable.

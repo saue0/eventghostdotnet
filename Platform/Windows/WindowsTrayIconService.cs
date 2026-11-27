@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using EventGhostDotNet.PluginContracts;
 using Microsoft.Win32;
+using Drawing = System.Drawing;
 using Forms = System.Windows.Forms;
 using Icon = System.Drawing.Icon;
 
@@ -11,10 +12,16 @@ namespace EventGhostDotNet.Platform.Windows;
 internal sealed class WindowsTrayIconService : ITrayIconService
 {
     private const int TooltipLimit = 63;
+    private const int HotkeyId = 1;
+    private const int WmHotkey = 0x0312;
+    private const uint HotkeyModifiers = 0x0001 | 0x0002 | 0x4000; // Alt | Control | NoRepeat
+    private const uint HotkeyVirtualKey = 0x45; // E
     private static readonly int TaskbarCreated = RegisterWindowMessage("TaskbarCreated");
 
     private readonly SynchronizationContext? _context = SynchronizationContext.Current;
     private readonly MessageOnlyWindow? _window;
+    private readonly Action<string, LogLevel>? _log;
+    private bool _hotkeyRegistered;
     private Forms.NotifyIcon? _icon;
     private Icon? _image;
     private Forms.ContextMenuStrip? _menu;
@@ -22,8 +29,9 @@ internal sealed class WindowsTrayIconService : ITrayIconService
     private string _tooltip = string.Empty;
     private bool _disposed;
 
-    public WindowsTrayIconService()
+    public WindowsTrayIconService(Action<string, LogLevel>? log = null)
     {
+        _log = log;
         SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
         try
         {
@@ -36,6 +44,16 @@ internal sealed class WindowsTrayIconService : ITrayIconService
             // sans fenêtre, il reste le seul mécanisme de reprise.
             Trace.TraceError($"Fenêtre de notification de l'icône indisponible : {exception.Message}");
             _window = null;
+        }
+
+        if (_window is not null)
+        {
+            _hotkeyRegistered = RegisterHotKey(_window.Handle, HotkeyId, HotkeyModifiers, HotkeyVirtualKey);
+            _log?.Invoke(
+                _hotkeyRegistered
+                    ? "Raccourci global Ctrl+Alt+E du menu de l'icône enregistré."
+                    : "Raccourci global Ctrl+Alt+E du menu de l'icône indisponible : déjà utilisé par une autre application.",
+                _hotkeyRegistered ? LogLevel.Debug : LogLevel.Warning);
         }
     }
 
@@ -84,12 +102,33 @@ internal sealed class WindowsTrayIconService : ITrayIconService
         previousMenu?.Dispose();
     }
 
+    /// <summary>
+    /// Affiche le menu près de la zone de notification pour une activation au clavier ;
+    /// le menu WinForms gère ensuite les flèches, Entrée et Échap.
+    /// </summary>
+    public void ShowMenu()
+    {
+        var menu = _menu;
+        if (menu is null || menu.Visible)
+            return;
+
+        var area = Forms.Screen.PrimaryScreen?.WorkingArea ?? Forms.SystemInformation.VirtualScreen;
+        var size = menu.GetPreferredSize(Drawing.Size.Empty);
+        menu.Show(new Drawing.Point(area.Right - size.Width - 8, area.Bottom - size.Height - 8));
+        menu.Focus();
+    }
+
     public void Dispose()
     {
         if (_disposed)
             return;
         _disposed = true;
         SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        if (_hotkeyRegistered && _window is not null)
+        {
+            UnregisterHotKey(_window.Handle, HotkeyId);
+            _hotkeyRegistered = false;
+        }
 
         var icon = _icon;
         var image = _image;
@@ -111,6 +150,12 @@ internal sealed class WindowsTrayIconService : ITrayIconService
 
     private void OnWindowMessage(int message, IntPtr wParam)
     {
+        if (message == WmHotkey && wParam.ToInt32() == HotkeyId)
+        {
+            ShowMenu();
+            return;
+        }
+
         if (TaskbarCreated == 0 || message != TaskbarCreated || _icon is null)
             return;
 
@@ -150,4 +195,10 @@ internal sealed class WindowsTrayIconService : ITrayIconService
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int RegisterWindowMessage(string message);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 }

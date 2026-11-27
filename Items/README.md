@@ -23,7 +23,7 @@ Les actions système sont proposées lors de l’ajout d’une action à une mac
 | **Question Oui/Non** | Pose une question ; le résultat transmis à l’action suivante est `Oui` ou `Non`. |
 | **Arrêter la macro** | Termine la séquence en cours. |
 | **Ouvrir une URL** | Ouvre une URL `http` ou `https` dans le navigateur par défaut. |
-| **Script PowerShell** | Exécute un script PowerShell. Le contexte `$eg` permet notamment de journaliser, de définir un résultat et de déclencher un événement. |
+| **Script PowerShell** | Exécute un script PowerShell sous un nom obligatoire, affiché dans l’arbre et le journal à la place de la première ligne du script. Le contexte `$eg` permet notamment de journaliser, de définir un résultat et de déclencher un événement. |
 | **Déclencher un événement** | Émet un nom d’événement et un payload facultatif. Le payload accepte les variables. Les macros associées à cet événement sont déclenchées. |
 | **Activer un élément** / **Désactiver un élément** | Active ou désactive un groupe, une macro, un événement, une action ou un démarrage de plugin. |
 | **Jump** | Appelle une macro puis arrête la séquence courante, appelle une macro puis reprend cette séquence, ou saute à une action de la macro courante. |

@@ -26,6 +26,8 @@ public sealed class MacroAction : ConfigurationItem
     public string Value { get; set; } = string.Empty;
     public string Target { get; set; } = string.Empty;
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ActivationTargetKind? ActivationTarget { get; set; }
     public string PluginId { get; set; } = string.Empty;
     public string ActionId { get; set; } = string.Empty;
@@ -78,7 +80,7 @@ public sealed class MacroAction : ConfigurationItem
         MacroActionKind.AskYesNo => $"Question Oui/Non : {Value}",
         MacroActionKind.Stop => "Arrêter la macro",
         MacroActionKind.OpenUrl => $"Ouvrir l'URL : {Value}",
-        MacroActionKind.PowerShell => $"Script PowerShell : {Value.Split(['\r', '\n'], 2)[0]}",
+        MacroActionKind.PowerShell => $"Script PowerShell : {(string.IsNullOrWhiteSpace(Name) ? Value.Split(['\r', '\n'], 2)[0] : Name)}",
         MacroActionKind.DisplayInputSource => $"Entrée écran : {Target} → {Value}",
         MacroActionKind.LogitechStart => $"Logitech — démarrer l'écoute : {Value}",
         MacroActionKind.LogitechChangeHost => $"Logitech — changer d'hôte : {Value}",

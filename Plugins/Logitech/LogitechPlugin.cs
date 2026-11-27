@@ -1,7 +1,9 @@
 using System.Buffers.Binary;
 using System.ComponentModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using EventGhostDotNet.PluginContracts;
+using Microsoft.Win32.SafeHandles;
 
 namespace EventGhostDotNet.Plugins.Logitech;
 
@@ -38,8 +40,11 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
     private readonly Dictionary<byte, byte> _keyFeatures = [];
     private readonly Dictionary<byte, byte> _batteryFeatures = [];
     private FileStream? _stream;
+    private CancellationTokenSource? _connection;
+    private int _reconnectRequested;
+    private int _sessionInterrupted;
     private Task? _worker;
-    private TaskCompletionSource _deviceChange = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource _deviceChange = NewDeviceChange();
 
     public LogitechUnifyClient(
         LogitechReceiver receiver,
@@ -120,10 +125,7 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _stop.CancelAsync();
-        FileStream? stream;
-        lock (_streamLock)
-            stream = _stream;
-        stream?.Dispose();
+        AbortConnection();
 
         if (_worker is not null)
         {
@@ -148,30 +150,44 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
         while (!cancellationToken.IsCancellationRequested)
         {
             await WaitForActiveAsync(cancellationToken);
+            Interlocked.Exchange(ref _reconnectRequested, 0);
             try
             {
                 using var handle = _hidDevices.Open(_devicePath);
-                var stream = new FileStream(handle, FileAccess.ReadWrite, 20, isAsync: true);
+                using var connection = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                using var stream = new FileStream(handle, FileAccess.ReadWrite, 20, isAsync: true);
                 lock (_streamLock)
+                {
                     _stream = stream;
+                    _connection = connection;
+                }
+
+                // Le verrouillage peut survenir entre l'attente et l'ouverture : la
+                // connexion est alors fermée sans jamais recevoir de rapport.
+                if (_session is { Status: not SessionStatus.Active })
+                {
+                    AbortConnection();
+                    continue;
+                }
+
                 _logCallback("Récepteur Logitech connecté.");
 
                 for (byte deviceId = 1; deviceId <= 6; deviceId++)
                 {
-                    await WritePacketAsync([0x11, deviceId, 0x00, 0x0D, 0x18, 0x14]);
-                    await WritePacketAsync([0x11, deviceId, 0x00, 0x0E, 0x1B, 0x04]);
-                    await WritePacketAsync([0x11, deviceId, 0x00, 0x0B, 0x10, 0x04]);
-                    await WritePacketAsync([0x11, deviceId, 0x00, 0x0C, 0x10, 0x00]);
+                    await WritePacketAsync([0x11, deviceId, 0x00, 0x0D, 0x18, 0x14], connection.Token);
+                    await WritePacketAsync([0x11, deviceId, 0x00, 0x0E, 0x1B, 0x04], connection.Token);
+                    await WritePacketAsync([0x11, deviceId, 0x00, 0x0B, 0x10, 0x04], connection.Token);
+                    await WritePacketAsync([0x11, deviceId, 0x00, 0x0C, 0x10, 0x00], connection.Token);
                 }
 
                 var report = new byte[20];
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    var bytesRead = await stream.ReadAsync(report, cancellationToken);
+                    var bytesRead = await stream.ReadAsync(report, connection.Token);
                     if (bytesRead == 0)
                         throw new IOException("Le récepteur a fermé la connexion HID.");
                     if (bytesRead >= 8)
-                        await ProcessReportAsync(report, cancellationToken);
+                        await ProcessReportAsync(report, connection.Token);
                     Array.Clear(report);
                 }
             }
@@ -179,47 +195,110 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
             {
                 break;
             }
+            catch (OperationCanceledException)
+            {
+                // Fermeture volontaire (verrouillage, veille, périphérique) : la boucle
+                // attend le retour de la session puis rouvre le récepteur.
+                continue;
+            }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
                                                Win32Exception or InvalidOperationException or ObjectDisposedException)
             {
-                if (!cancellationToken.IsCancellationRequested)
+                if (cancellationToken.IsCancellationRequested)
+                    break;
+                if (Interlocked.Exchange(ref _reconnectRequested, 0) != 0)
+                    continue;
+                try
                 {
-                    try
-                    {
-                        await WaitBeforeRetryAsync(
-                            $"Récepteur Logitech indisponible : {exception.Message} Nouvelle tentative automatique.",
-                            cancellationToken);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
+                    await WaitBeforeRetryAsync(
+                        $"Récepteur Logitech indisponible : {exception.Message} Nouvelle tentative automatique.",
+                        cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
                 }
             }
             finally
             {
                 lock (_streamLock)
+                {
                     _stream = null;
+                    _connection = null;
+                }
             }
         }
     }
 
-    private void OnDevicesChanged() => Interlocked.Exchange(ref _deviceChange,
-            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
-        .TrySetResult();
+    private void OnDevicesChanged()
+    {
+        Volatile.Read(ref _deviceChange).TrySetResult();
+
+        // Une interface HID qui change (récepteur suspendu, rebranché, réénuméré)
+        // laisse parfois une lecture en attente et les appareils sans fil perdent
+        // leur configuration HID++ : la connexion est réarmée pour tout relire.
+        AbortConnection("Périphérique HID modifié : écoute Logitech réarmée.");
+    }
 
     private void OnSessionStatusChanged(SessionStatus status)
     {
         if (status == SessionStatus.Active)
+        {
+            if (Interlocked.Exchange(ref _sessionInterrupted, 0) != 0)
+                AbortConnection("Reprise de session : écoute Logitech réarmée.");
             return;
+        }
 
+        Interlocked.Exchange(ref _sessionInterrupted, 1);
+        AbortConnection("Session inactive : écoute Logitech suspendue ; reconnexion automatique.");
+    }
+
+    /// <summary>
+    /// Ferme la connexion courante. Le jeton et <c>CancelIoEx</c> terminent la lecture
+    /// overlapped en attente : sans eux, un pilote HID peut la laisser en suspens et
+    /// la boucle ne rouvrirait jamais le récepteur au retour de la session.
+    /// </summary>
+    private void AbortConnection(string? reason = null)
+    {
         FileStream? stream;
+        CancellationTokenSource? connection;
         lock (_streamLock)
         {
             stream = _stream;
             _stream = null;
+            connection = _connection;
+            _connection = null;
         }
-        stream?.Dispose();
+
+        if (stream is null)
+            return;
+
+        if (reason is not null)
+            _logCallback(reason);
+        Interlocked.Exchange(ref _reconnectRequested, 1);
+        try
+        {
+            connection?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        try
+        {
+            CancelIoEx(stream.SafeFileHandle, IntPtr.Zero);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        try
+        {
+            stream.Dispose();
+        }
+        catch (IOException)
+        {
+        }
     }
 
     private async Task WaitForActiveAsync(CancellationToken cancellationToken)
@@ -239,11 +318,17 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
         _logCallback(message);
 
         // Réessai après 2 s, ou immédiatement dès qu'une interface HID change.
-        await Task.WhenAny(
-            Task.Delay(TimeSpan.FromSeconds(2), cancellationToken),
-            Volatile.Read(ref _deviceChange).Task);
+        var deviceChange = Volatile.Read(ref _deviceChange);
+        await Task.WhenAny(Task.Delay(TimeSpan.FromSeconds(2), cancellationToken), deviceChange.Task);
         cancellationToken.ThrowIfCancellationRequested();
+
+        // Un jeton déjà signalé ferait repartir chaque réessai suivant immédiatement.
+        if (deviceChange.Task.IsCompleted)
+            Interlocked.CompareExchange(ref _deviceChange, NewDeviceChange(), deviceChange);
     }
+
+    private static TaskCompletionSource NewDeviceChange() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private async Task ProcessReportAsync(byte[] report, CancellationToken cancellationToken)
     {
@@ -364,6 +449,10 @@ internal sealed class LogitechUnifyClient : IAsyncDisposable
             _writeLock.Release();
         }
     }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CancelIoEx(SafeFileHandle file, IntPtr overlapped);
 
     private static byte[] ParseHex(string value)
     {

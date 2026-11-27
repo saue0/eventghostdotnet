@@ -1466,6 +1466,27 @@ public partial class MainWindow
         };
         DockPanel.SetDock(warning, Dock.Top);
         panel.Children.Add(warning);
+        var nameLabel = new TextBlock
+        {
+            Text = "Nom de l'action :",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0)
+        };
+        var name = new TextBox
+        {
+            Text = existing?.Name ?? string.Empty,
+            Padding = new Thickness(6),
+            MinWidth = 320
+        };
+        var namePanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+        namePanel.Children.Add(nameLabel);
+        namePanel.Children.Add(name);
+        DockPanel.SetDock(namePanel, Dock.Top);
+        panel.Children.Add(namePanel);
         var buttons = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -1481,6 +1502,13 @@ public partial class MainWindow
         };
         add.Click += (_, _) =>
         {
+            if (string.IsNullOrWhiteSpace(name.Text))
+            {
+                MessageBox.Show(dialog, "Saisissez un nom pour l'action.", "Nom requis",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                name.Focus();
+                return;
+            }
             if (string.IsNullOrWhiteSpace(editor.Text))
             {
                 MessageBox.Show(dialog, "Le script ne peut pas être vide.", "Script vide",
@@ -1510,12 +1538,19 @@ public partial class MainWindow
         panel.Children.Add(useWindowsPowerShell);
         panel.Children.Add(editor);
         dialog.Content = panel;
-        dialog.Loaded += (_, _) => editor.FocusEditor();
+        dialog.Loaded += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(name.Text))
+                name.Focus();
+            else
+                editor.FocusEditor();
+        };
 
         return dialog.ShowDialog() == true
             ? new MacroAction
             {
                 Kind = MacroActionKind.PowerShell,
+                Name = name.Text.Trim(),
                 Value = editor.Text,
                 Target = existing?.Target ?? string.Empty,
                 UnlimitedExecution = unlimitedExecution.IsChecked == true,

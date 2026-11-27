@@ -367,6 +367,9 @@ public partial class MainWindow
                 case Key.A:
                     AddAction_Click(this, new RoutedEventArgs());
                     break;
+                case Key.I:
+                    ShowTrayMenu_Click(this, new RoutedEventArgs());
+                    break;
                 default:
                     return;
             }
