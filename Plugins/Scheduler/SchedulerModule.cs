@@ -10,14 +10,32 @@ public sealed class SchedulerModule : IPlugin
     private const string ConfigurationId = "DailySchedule";
     private const int MaximumSeconds = 2_000_000;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private static readonly string[] MonthNames =
+        ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    private static readonly string[] DayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
     private readonly StartupTaskGroup _schedules = new();
     private readonly object _jobLock = new();
     private readonly Dictionary<string, List<Job>> _jobs = new(StringComparer.OrdinalIgnoreCase);
 
-    internal sealed record Schedule(string Kind, string Time, string Days, string Date, int IdleSeconds, string EventName);
+    internal sealed record Schedule(string Kind, string Time, string Days, string Date, int IdleSeconds,
+        string EventName, int IntervalSeconds = 0, string Cron = "");
     internal sealed record ScheduleList(List<Schedule> Schedules);
     private sealed record LegacySchedule(string Time, string EventName);
     private sealed record ActionSettings(string Id, int Seconds, string EventName, string Payload, Guid MacroId);
+
+    internal sealed record CronExpression(
+        bool[] Minutes, bool[] Hours, bool[] DaysOfMonth, bool[] Months, bool[] DaysOfWeek,
+        bool DayOfMonthRestricted, bool DayOfWeekRestricted)
+    {
+        public bool Matches(DateTime now)
+        {
+            if (!Minutes[now.Minute] || !Hours[now.Hour] || !Months[now.Month])
+                return false;
+            var day = DaysOfMonth[now.Day];
+            var weekday = DaysOfWeek[(int)now.DayOfWeek];
+            return DayOfMonthRestricted && DayOfWeekRestricted ? day || weekday : day && weekday;
+        }
+    }
 
     private sealed class Job(CancellationTokenSource cancellation)
     {
@@ -33,7 +51,6 @@ public sealed class SchedulerModule : IPlugin
         new("DelayedEvent", "Événement différé"),
         new("DelayedMacro", "Macro différée"),
         new("Cancel", "Annuler une tâche planifiée"),
-        new("Repeat", "Minuterie répétitive"),
         new("Countdown", "Compte à rebours")
     ];
 
@@ -78,7 +95,7 @@ public sealed class SchedulerModule : IPlugin
     {
         EnsureActionId(actionId);
         var settings = existing is null
-            ? new ActionSettings("minuterie", 60, "Schedule.Timer", string.Empty, Guid.Empty)
+            ? new ActionSettings("tache", 60, "Schedule.Timer", string.Empty, Guid.Empty)
             : ReadAction(existing);
         var values = SchedulerDialogs.ConfigureAction(host, actionId, settings.Id, settings.Seconds,
             settings.EventName, settings.Payload, settings.MacroId, ValidateActionFields);
@@ -97,7 +114,6 @@ public sealed class SchedulerModule : IPlugin
             {
                 "Cancel" => $"Annuler la tâche « {settings.Id} »",
                 "DelayedMacro" => $"Macro différée — {settings.Id} ({settings.Seconds} s)",
-                "Repeat" => $"Minuterie répétitive — {settings.Id} ({settings.Seconds} s)",
                 "Countdown" => $"Compte à rebours — {settings.Id} ({settings.Seconds} s)",
                 _ => $"Événement différé — {settings.Id} ({settings.Seconds} s)"
             };
@@ -165,15 +181,12 @@ public sealed class SchedulerModule : IPlugin
     {
         try
         {
-            do
-            {
-                await Task.Delay(TimeSpan.FromSeconds(settings.Seconds), entry.Cancellation.Token);
-                entry.Cancellation.Token.ThrowIfCancellationRequested();
-                if (actionId == "DelayedMacro")
-                    await host.RunMacroAsync(settings.MacroId, entry.Cancellation.Token);
-                else
-                    host.RaiseEvent(settings.EventName, string.IsNullOrEmpty(settings.Payload) ? null : settings.Payload);
-            } while (actionId == "Repeat");
+            await Task.Delay(TimeSpan.FromSeconds(settings.Seconds), entry.Cancellation.Token);
+            entry.Cancellation.Token.ThrowIfCancellationRequested();
+            if (actionId == "DelayedMacro")
+                await host.RunMacroAsync(settings.MacroId, entry.Cancellation.Token);
+            else
+                host.RaiseEvent(settings.EventName, string.IsNullOrEmpty(settings.Payload) ? null : settings.Payload);
         }
         catch (OperationCanceledException) when (entry.Cancellation.IsCancellationRequested)
         {
@@ -208,6 +221,14 @@ public sealed class SchedulerModule : IPlugin
             return;
         }
 
+        if (schedule.Kind == "Interval")
+        {
+            using var repeat = new PeriodicTimer(TimeSpan.FromSeconds(schedule.IntervalSeconds));
+            while (await repeat.WaitForNextTickAsync(cancellationToken))
+                host.RaiseEvent(schedule.EventName, DateTime.Now.ToString("O", CultureInfo.InvariantCulture));
+            return;
+        }
+
         var now = DateTime.Now;
         var lastMinute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0);
         var idleTriggered = false;
@@ -235,6 +256,8 @@ public sealed class SchedulerModule : IPlugin
 
     internal static bool MatchesSchedule(Schedule schedule, DateTime now)
     {
+        if (schedule.Kind == "Cron")
+            return MatchesCron(schedule.Cron, now);
         if (now.ToString("HH:mm", CultureInfo.InvariantCulture) != schedule.Time)
             return false;
         return schedule.Kind switch
@@ -258,12 +281,154 @@ public sealed class SchedulerModule : IPlugin
         return true;
     }
 
+    internal static bool MatchesCron(string expression, DateTime now) =>
+        TryParseCron(expression, out var cron, out _) && cron!.Matches(now);
+
+    internal static string? ValidateCron(string expression) =>
+        TryParseCron(expression, out _, out var error) ? null : error;
+
+    internal static bool TryParseCron(string expression, out CronExpression? cron, out string? error)
+    {
+        cron = null;
+        error = null;
+        var fields = (expression ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (fields.Length != 5)
+        {
+            error = "L'expression cron doit contenir 5 champs : minute heure jour-du-mois mois jour-de-semaine.";
+            return false;
+        }
+
+        string[] labels = ["minute", "heure", "jour-du-mois", "mois", "jour-de-semaine"];
+        int[] minimums = [0, 0, 1, 1, 0];
+        int[] maximums = [59, 23, 31, 12, 7];
+        var sets = new bool[]?[5];
+        for (var index = 0; index < 5; index++)
+        {
+            var names = index == 3 ? MonthNames : index == 4 ? DayNames : null;
+            if (!TryParseCronField(fields[index], minimums[index], maximums[index], names,
+                    out var values, out var reason))
+            {
+                error = $"Champ « {labels[index]} » invalide : {reason}";
+                return false;
+            }
+            sets[index] = values;
+        }
+
+        var daysOfWeek = new bool[7];
+        for (var index = 0; index < 7; index++)
+            daysOfWeek[index] = sets[4]![index];
+        if (sets[4]![7])
+            daysOfWeek[0] = true;
+
+        cron = new CronExpression(sets[0]!, sets[1]!, sets[2]!, sets[3]!, daysOfWeek,
+            !fields[2].StartsWith('*'), !fields[4].StartsWith('*'));
+        return true;
+    }
+
+    private static bool TryParseCronField(string field, int min, int max, string[]? names,
+        out bool[] values, out string? error)
+    {
+        values = new bool[max + 1];
+        error = null;
+        foreach (var raw in field.Split(','))
+        {
+            var item = raw.Trim();
+            if (item.Length == 0)
+            {
+                error = "un élément est vide.";
+                return false;
+            }
+
+            var step = 1;
+            var range = item;
+            var slash = item.IndexOf('/');
+            if (slash >= 0)
+            {
+                range = item[..slash];
+                if (!int.TryParse(item[(slash + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out step) ||
+                    step < 1)
+                {
+                    error = "le pas doit être un entier supérieur ou égal à 1.";
+                    return false;
+                }
+                if (range.Length == 0)
+                {
+                    error = "le pas doit suivre une valeur ou « * ».";
+                    return false;
+                }
+            }
+
+            int from;
+            int to;
+            if (range == "*")
+            {
+                from = min;
+                to = max;
+            }
+            else
+            {
+                var dash = range.IndexOf('-', 1);
+                if (dash > 0)
+                {
+                    if (!TryParseCronValue(range[..dash], names, min, max, out from, out error) ||
+                        !TryParseCronValue(range[(dash + 1)..], names, min, max, out to, out error))
+                        return false;
+                    if (to < from)
+                    {
+                        error = "la fin de la plage doit être supérieure ou égale au début.";
+                        return false;
+                    }
+                }
+                else
+                {
+                    if (!TryParseCronValue(range, names, min, max, out from, out error))
+                        return false;
+                    to = slash >= 0 ? max : from;
+                }
+            }
+
+            for (var value = from; value <= to; value += step)
+                values[value] = true;
+        }
+        return true;
+    }
+
+    private static bool TryParseCronValue(string text, string[]? names, int min, int max,
+        out int value, out string? error)
+    {
+        error = null;
+        var trimmed = text.Trim();
+        if (names is not null)
+        {
+            var nameIndex = Array.FindIndex(names,
+                name => string.Equals(name, trimmed, StringComparison.OrdinalIgnoreCase));
+            if (nameIndex >= 0)
+            {
+                value = ReferenceEquals(names, MonthNames) ? nameIndex + 1 : nameIndex;
+                return true;
+            }
+        }
+        if (!int.TryParse(trimmed, NumberStyles.None, CultureInfo.InvariantCulture, out value))
+        {
+            error = $"« {trimmed} » n'est pas un nombre valide.";
+            return false;
+        }
+        if (value < min || value > max)
+        {
+            error = $"la valeur {value} doit être comprise entre {min} et {max}.";
+            return false;
+        }
+        return true;
+    }
+
     internal static string DescribeSchedule(Schedule schedule) => schedule.Kind switch
     {
         "Daily" => $"Quotidienne {schedule.Time} → {schedule.EventName}",
         "Weekly" => $"Hebdomadaire {schedule.Days} à {schedule.Time} → {schedule.EventName}",
         "Once" => $"Le {schedule.Date} à {schedule.Time} → {schedule.EventName}",
         "Idle" => $"Inactivité {schedule.IdleSeconds} s → {schedule.EventName}",
+        "Interval" => $"Répétition toutes les {schedule.IntervalSeconds} s → {schedule.EventName}",
+        "Cron" => $"Cron {schedule.Cron} → {schedule.EventName}",
         _ => throw new JsonException("Type de planification inconnu.")
     };
 
@@ -298,13 +463,18 @@ public sealed class SchedulerModule : IPlugin
 
     internal static string? ValidateSchedule(Schedule schedule)
     {
-        if (schedule.Kind is not ("Daily" or "Weekly" or "Once" or "Idle"))
+        if (schedule.Kind is not ("Daily" or "Weekly" or "Once" or "Idle" or "Interval" or "Cron"))
             return "Type de planification inconnu.";
         if (!ValidEventName(schedule.EventName))
             return "Le nom de l'événement ne doit pas être vide ni contenir d'espace.";
         if (schedule.Kind == "Idle")
             return schedule.IdleSeconds is < 1 or > MaximumSeconds
                 ? $"L'inactivité doit être comprise entre 1 et {MaximumSeconds} secondes." : null;
+        if (schedule.Kind == "Interval")
+            return schedule.IntervalSeconds is < 1 or > MaximumSeconds
+                ? $"L'intervalle doit être compris entre 1 et {MaximumSeconds} secondes." : null;
+        if (schedule.Kind == "Cron")
+            return ValidateCron(schedule.Cron ?? string.Empty);
         if (!TimeOnly.TryParseExact(schedule.Time, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
             return "L'heure doit respecter le format HH:mm.";
         if (schedule.Kind == "Once" && !DateOnly.TryParseExact(schedule.Date, "yyyy-MM-dd",
@@ -346,7 +516,7 @@ public sealed class SchedulerModule : IPlugin
 
     private static void EnsureActionId(string actionId)
     {
-        if (actionId is not ("DelayedEvent" or "DelayedMacro" or "Cancel" or "Repeat" or "Countdown"))
+        if (actionId is not ("DelayedEvent" or "DelayedMacro" or "Cancel" or "Countdown"))
             throw new InvalidOperationException($"Action du planificateur inconnue : {actionId}");
     }
 }

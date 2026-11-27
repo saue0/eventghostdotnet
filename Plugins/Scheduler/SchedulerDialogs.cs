@@ -19,7 +19,9 @@ internal static class SchedulerDialogs
         new("Daily", "Quotidienne"),
         new("Weekly", "Hebdomadaire"),
         new("Once", "Date précise"),
-        new("Idle", "Inactivité Windows")
+        new("Idle", "Inactivité Windows"),
+        new("Interval", "Intervalle"),
+        new("Cron", "Cron")
     ];
 
     public static List<SchedulerModule.Schedule>? ConfigureSchedules(
@@ -68,7 +70,7 @@ internal static class SchedulerDialogs
         {
             var selectedKind = (ScheduleKind)kind.SelectedItem;
             var item = ConfigureSchedule(dialog, new SchedulerModule.Schedule(selectedKind.Id, "08:00", "1,2,3,4,5",
-                DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), 300, "Schedule.Event"));
+                DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), 300, "Schedule.Event", 60, "0 * * * *"));
             if (item is null)
                 return;
             schedules.Add(item);
@@ -101,7 +103,7 @@ internal static class SchedulerDialogs
     private static SchedulerModule.Schedule? ConfigureSchedule(Window owner, SchedulerModule.Schedule schedule)
     {
         var fields = new List<StartupConfigurationField>();
-        if (schedule.Kind != "Idle")
+        if (schedule.Kind is "Daily" or "Weekly" or "Once")
             fields.Add(new("Heure locale (HH:mm) :", schedule.Time));
         if (schedule.Kind == "Weekly")
             fields.Add(new("Jours (0 = dimanche, 1 = lundi, …, 6 = samedi; séparés par des virgules) :", schedule.Days));
@@ -109,25 +111,36 @@ internal static class SchedulerDialogs
             fields.Add(new("Date locale (AAAA-MM-JJ) :", schedule.Date));
         if (schedule.Kind == "Idle")
             fields.Add(new("Inactivité clavier/souris (secondes) :", schedule.IdleSeconds.ToString(CultureInfo.InvariantCulture)));
+        if (schedule.Kind == "Interval")
+            fields.Add(new("Intervalle entre deux déclenchements (secondes) :",
+                schedule.IntervalSeconds.ToString(CultureInfo.InvariantCulture)));
+        if (schedule.Kind == "Cron")
+            fields.Add(new("Expression cron (minute heure jour-du-mois mois jour-de-semaine, ex. 0 * * * *) :",
+                schedule.Cron));
         fields.Add(new("Nom de l'événement :", schedule.EventName));
 
         SchedulerModule.Schedule? Parse(string[] values)
         {
             var index = 0;
-            var time = schedule.Kind == "Idle" ? "" : values[index++];
+            var time = schedule.Kind is "Idle" or "Interval" or "Cron" ? "" : values[index++];
             var days = schedule.Kind == "Weekly" ? values[index++].Replace(" ", "") : "";
             var date = schedule.Kind == "Once" ? values[index++] : "";
             var idle = 0;
             if (schedule.Kind == "Idle" &&
                 !int.TryParse(values[index++], NumberStyles.None, CultureInfo.InvariantCulture, out idle))
                 return null;
-            return new SchedulerModule.Schedule(schedule.Kind, time, days, date, idle, values[index]);
+            var interval = 0;
+            if (schedule.Kind == "Interval" &&
+                !int.TryParse(values[index++], NumberStyles.None, CultureInfo.InvariantCulture, out interval))
+                return null;
+            var cron = schedule.Kind == "Cron" ? values[index++] : "";
+            return new SchedulerModule.Schedule(schedule.Kind, time, days, date, idle, values[index], interval, cron);
         }
 
         var result = StartupConfigurationDialog.Show(owner, "Modifier la planification", fields, values =>
         {
             var parsed = Parse(values);
-            return parsed is null ? "La durée d'inactivité doit être un nombre entier." : SchedulerModule.ValidateSchedule(parsed);
+            return parsed is null ? "La durée doit être un nombre entier." : SchedulerModule.ValidateSchedule(parsed);
         });
         return result is null ? null : Parse(result);
     }
@@ -153,15 +166,14 @@ internal static class SchedulerDialogs
             panel.Children.Add(box);
             return box;
         }
-        var idBox = AddText("Identifiant de la tâche (plusieurs minuteries peuvent le partager) :", id);
+        var idBox = AddText("Identifiant de la tâche (plusieurs tâches peuvent le partager) :", id);
         TextBox? secondsBox = null;
         TextBox? eventBox = null;
         TextBox? payloadBox = null;
         ComboBox? macroBox = null;
         if (actionId != "Cancel")
         {
-            secondsBox = AddText(actionId == "Repeat" ? "Intervalle (secondes) :" : "Délai (secondes) :",
-                seconds.ToString(CultureInfo.InvariantCulture));
+            secondsBox = AddText("Délai (secondes) :", seconds.ToString(CultureInfo.InvariantCulture));
             if (actionId == "DelayedMacro")
             {
                 panel.Children.Add(new TextBlock { Text = "Macro à exécuter :", Margin = new Thickness(0, 0, 0, 5) });
