@@ -3,8 +3,8 @@ $ErrorActionPreference = 'Stop'
 $workspace = (Get-Location).Path
 $releaseRoots = @(
     'bin\live',
-    'bin\Release\net9.0-windows',
-    'bin\Release\net9.0-windows10.0.19041.0'
+    'bin\Release\net11.0-windows',
+    'bin\Release\net11.0-windows10.0.19041.0'
 ) | ForEach-Object {
     [System.IO.Path]::GetFullPath((Join-Path $workspace $_)).TrimEnd('\') + '\'
 }

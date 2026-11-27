@@ -4,7 +4,7 @@ Résumé de l'état du projet pour reprendre le travail dans VS Code ou une futu
 
 ## Projet
 
-- Application Windows WPF, cible `net9.0-windows10.0.19041.0`, Markdig. Les notifications sont des fenêtres WPF (`NotificationService` / `NotificationWindow`) et la documentation Markdown est rendue en `FlowDocument` (`MarkdownFlowDocumentRenderer`) : ni Windows App SDK ni WebView2 ne sont référencés.
+- Application Windows WPF, cible `net11.0-windows10.0.19041.0` (.NET 11, STS), Markdig. Les notifications sont des fenêtres WPF (`NotificationService` / `NotificationWindow`) et la documentation Markdown est rendue en `FlowDocument` (`MarkdownFlowDocumentRenderer`) : ni Windows App SDK ni WebView2 ne sont référencés.
 - Ouvrir `EventGhostDotNet.sln` (application, contrats, plugins intégrés, cœur testable, tests).
 - Construire et lancer : `dotnet build EventGhostDotNet.sln`, puis `dotnet run --project EventGhostDotNet.csproj`.
 - Configuration utilisateur : `%LOCALAPPDATA%\EventGhostDotNet\configuration.json`, sauvegarde précédente dans `configuration.json.bak`.
@@ -18,7 +18,7 @@ Résumé de l'état du projet pour reprendre le travail dans VS Code ou une futu
 | --- | --- |
 | `EventGhostDotNet.csproj` | Fenêtre principale (partials `MainWindow.*`), modèles `Items/`, persistance, moteur de macros. |
 | `Core/` | Logique sans WPF : formatage ANSI, migration et version de schéma, écriture atomique, manifeste et chargeur de plugins, modèles d'items (`Core/Items`), moteur d'exécution des macros (`Core/Macros`), action `If`. |
-| `PluginContracts/` | Contrat `IPlugin` / `IPluginHost`, cible `net9.0` **sans WPF**. |
+| `PluginContracts/` | Contrat `IPlugin` / `IPluginHost`, cible `net11.0` **sans WPF**. |
 | `Plugins/` | Plugins intégrés (Display, FileWatcher, Logitech, ProcessWatcher, Scheduler, SystemTrayMenu, Wallpaper) et `Shared/`. |
 | `Tests/EventGhostDotNet.Core.Tests` | Tests xunit du projet `Core` (exécutables sans Windows). |
 
@@ -62,6 +62,7 @@ Services extraits de `MainWindow` :
 
 - `dotnet restore EventGhostDotNet.csproj -p:EnableWindowsTargeting=true` : OK.
 - Sous Linux, `dotnet build EventGhostDotNet.csproj -p:EnableWindowsTargeting=true` et `dotnet build EventGhostDotNet.sln -p:EnableWindowsTargeting=true` réussissent entièrement depuis la suppression de Windows App SDK (plus de `MakePri.exe` ni de génération PRI).
+- Migration .NET 11 vérifiée avec le SDK `11.0.100` : `dotnet build EventGhostDotNet.sln -c Release` (0 avertissement, 0 erreur), les 123 tests `Core` et `--smoke-test` (7 plugins). Sous Windows avec `UseWindowsForms` et `ImplicitUsings`, le SDK 11 injecte `System.Windows.Forms` dans les usings implicites : `MenuItem` est désormais aliasé vers `System.Windows.Controls.MenuItem` dans `MainWindow.xaml.cs`, comme les autres contrôles WPF déjà aliasés.
 - `dotnet test Tests/EventGhostDotNet.Core.Tests/EventGhostDotNet.Core.Tests.csproj` : 123 tests du cœur, sans WPF, dont `RotatingLogFileTests` (création du dossier, rotation, décalage et suppression des archives, `ReadTail`, `Clear`), `MacroEngineTests` (séquence, résultats, actions désactivées, `Stop`, `If`, `If / Jump`, `Jump`, action seule, profondeur, limite d'exécutions, annulation, erreurs, dialogues, PowerShell/plugins, actions système, redémarrage de plugin, indentation) et `MacroNavigationTests` (cibles de branches et macros dupliquées).
 - La CI `.github/workflows/ci.yml` compile la solution et exécute les tests `Core` sur `windows-latest`, puis publie `win-x64` en dépendant du runtime dans `artifacts/publish`, démarre l'exécutable `--minimized` pendant 10 s (il doit rester vivant et ne rien écrire dans `errors.log`) et lance `--smoke-test` en vérifiant le code de sortie et la présence des 7 identifiants (`Display`, `FileWatcher`, `Logitech`, `ProcessWatcher`, `Scheduler`, `SystemTrayMenu`, `Wallpaper`). Le mode `--smoke-test` et la publication ont été vérifiés localement sous Windows ; les étapes elles-mêmes n'ont pas encore tourné sur un runner GitHub.
 - `dotnet publish -c Release -r win-x64|win-arm64 --self-contained true -p:EnableWindowsTargeting=true` vérifié sous Linux : les deux dossiers contiennent l'exécutable, `runtimeconfig.json`, les 7 plugins et un `plugins.manifest` de 7 entrées. `build\publish.ps1` lui-même, la compilation Inno Setup et la signature Authenticode demandent Windows, Inno Setup 6.3+ et un certificat ; ils n'ont pas été exécutés ici.

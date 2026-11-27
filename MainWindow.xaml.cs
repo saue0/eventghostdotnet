@@ -35,6 +35,7 @@ using ComboBox = System.Windows.Controls.ComboBox;
 using FontFamily = System.Windows.Media.FontFamily;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using ListBox = System.Windows.Controls.ListBox;
+using MenuItem = System.Windows.Controls.MenuItem;
 using MessageBox = System.Windows.MessageBox;
 using Orientation = System.Windows.Controls.Orientation;
 using RadioButton = System.Windows.Controls.RadioButton;

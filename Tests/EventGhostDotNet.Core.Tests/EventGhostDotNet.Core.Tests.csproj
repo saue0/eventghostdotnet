@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
-    <!-- Le runtime 9 n'est pas toujours installé : les tests peuvent tourner sur un runtime plus récent. -->
+    <!-- Le runtime de la cible n'est pas toujours installé : les tests peuvent tourner sur un runtime plus récent. -->
     <RollForward>LatestMajor</RollForward>
   </PropertyGroup>
 

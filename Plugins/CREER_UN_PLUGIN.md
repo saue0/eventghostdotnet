@@ -1,6 +1,6 @@
 # Créer un plugin
 
-L'application charge les plugins au démarrage depuis les DLL placées dans le sous-dossier `Plugins` à côté de son exécutable. Ce guide décrit la création d'un plugin externe et son intégration comme plugin intégré. Pour suivre les exemples et construire un plugin, utilisez une copie du dépôt source avec le SDK .NET 9 ou plus récent; la version publiée ne contient pas les projets ni leur code source.
+L'application charge les plugins au démarrage depuis les DLL placées dans le sous-dossier `Plugins` à côté de son exécutable. Ce guide décrit la création d'un plugin externe et son intégration comme plugin intégré. Pour suivre les exemples et construire un plugin, utilisez une copie du dépôt source avec le SDK .NET 11 ou plus récent; la version publiée ne contient pas les projets ni leur code source.
 
 ## 1. Créer le projet
 
@@ -9,7 +9,7 @@ Pour un développement dans ce dépôt, créez `Plugins\MonPlugin\MonPlugin.cspr
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <TargetFramework>net11.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -20,7 +20,7 @@ Pour un développement dans ce dépôt, créez `Plugins\MonPlugin\MonPlugin.cspr
 </Project>
 ```
 
-Si le projet est en dehors du dépôt, adaptez le chemin de la référence à `PluginContracts.csproj`. `PluginContracts` cible `net9.0` et ne dépend pas de WPF : `UseWPF` n'est nécessaire que si le plugin affiche ses propres formulaires.
+Si le projet est en dehors du dépôt, adaptez le chemin de la référence à `PluginContracts.csproj`. `PluginContracts` cible `net11.0` et ne dépend pas de WPF : `UseWPF` n'est nécessaire que si le plugin affiche ses propres formulaires.
 
 ## 2. Implémenter `IPlugin`
 

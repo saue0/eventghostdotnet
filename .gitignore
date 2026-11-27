@@ -4,3 +4,4 @@ obj/
 
 .mono/
 artifacts/
+.dotnet/

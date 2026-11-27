@@ -1,10 +1,10 @@
 # EventGhost .NET
 
-Application de bureau Windows en WPF et .NET 9, inspirée du fonctionnement d'EventGhost. Cette implémentation est indépendante et ne reprend pas son code source.
+Application de bureau Windows en WPF et .NET 11, inspirée du fonctionnement d'EventGhost. Cette implémentation est indépendante et ne reprend pas son code source.
 
 ## Démarrer
 
-Depuis ce dossier, avec le SDK .NET 9 ou plus récent :
+Depuis ce dossier, avec le SDK .NET 11 ou plus récent :
 
 ```powershell
 dotnet run
@@ -12,7 +12,7 @@ dotnet run
 
 Depuis une version publiée, lancez `EventGhostDotNet.exe`.
 
-Dans VS Code, la tâche « Release : arrêter, publier et redémarrer » demande la sortie des instances Release, publie l'application et les plugins dans `bin\live`, puis démarre cette version. La publication Windows x64 nécessite le .NET 9 Desktop Runtime x64 installé sur chaque poste. Conservez tout le dossier publié, y compris les DLL, les fichiers `.deps.json` des plugins, l'icône et les README. Une confirmation peut être nécessaire si la configuration a été modifiée ; si la fermeture est annulée ou prend plus de 30 secondes, la publication est annulée. Lors de la première utilisation avec une ancienne version ne prenant pas en charge cette demande, quittez-la manuellement depuis la zone de notification puis relancez la tâche.
+Dans VS Code, la tâche « Release : arrêter, publier et redémarrer » demande la sortie des instances Release, publie l'application et les plugins dans `bin\live`, puis démarre cette version. La publication Windows x64 nécessite le .NET 11 Desktop Runtime x64 installé sur chaque poste. Conservez tout le dossier publié, y compris les DLL, les fichiers `.deps.json` des plugins, l'icône et les README. Une confirmation peut être nécessaire si la configuration a été modifiée ; si la fermeture est annulée ou prend plus de 30 secondes, la publication est annulée. Lors de la première utilisation avec une ancienne version ne prenant pas en charge cette demande, quittez-la manuellement depuis la zone de notification puis relancez la tâche.
 
 ## Tests
 
@@ -27,7 +27,7 @@ Les tests couvrent la logique sans interface de `Core` : journal ANSI, rotation 
 Le script `build\publish.ps1` publie l'application et ses plugins pour Windows x64 et ARM64, puis vérifie l'exécutable, `runtimeconfig.json`, les 7 plugins et `plugins.manifest`.
 
 ```powershell
-# Dépendant du runtime : .NET 9 Desktop Runtime x64 ou ARM64 requis sur le poste.
+# Dépendant du runtime : .NET 11 Desktop Runtime x64 ou ARM64 requis sur le poste.
 .\build\publish.ps1
 
 # Autonome : le runtime est inclus, aucun prérequis .NET sur le poste.

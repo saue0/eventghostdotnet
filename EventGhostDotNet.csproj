@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net11.0-windows10.0.19041.0</TargetFramework>
     <Version>1.0.0</Version>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
@@ -17,6 +17,8 @@
          ou Application.SetHighDpiMode) : la conscience DPI doit venir du manifeste, qui couvre aussi
          les plugins chargés dans le processus. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <!-- Un SDK .NET 11 peut être installé localement dans .dotnet/ : ne pas le compiler avec l'application. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);.dotnet/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
