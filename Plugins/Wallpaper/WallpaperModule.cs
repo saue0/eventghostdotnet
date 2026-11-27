@@ -31,6 +31,8 @@ public sealed class WallpaperModule : IPlugin
     private const string ApplyRandomActionId = "WallpaperApplyRandom";
     private const int MaximumImageCount = 8;
     private const long MaximumImageBytes = 50 * 1024 * 1024;
+    private const uint QdcOnlyActivePaths = 0x2;
+    private const uint GetTargetDeviceName = 2;
     private static readonly Uri BingHost = new("https://www.bing.com/");
     private static readonly HttpClient HttpClient = new()
     {
@@ -385,10 +387,10 @@ public sealed class WallpaperModule : IPlugin
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var monitorCount = SetWallpapers(generatedImages, cancellationToken);
+        var monitorCount = SetWallpapers(generatedImages, host.Log, cancellationToken);
         CleanupWallpaperFiles(directory, generatedImages);
         host.Result = true;
-        host.Log($"Fond d'écran Bing appliqué sur {monitorCount} écran(s); " +
+        host.Log($"Fond d'écran Bing appliqué sur {monitorCount} écran(s) actif(s); " +
                  $"{generatedImages.Count} image(s) enregistrée(s) dans « {directory} ».");
     }
 
@@ -416,10 +418,10 @@ public sealed class WallpaperModule : IPlugin
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var monitorCount = SetWallpapers(generatedImages, cancellationToken);
+        var monitorCount = SetWallpapers(generatedImages, host.Log, cancellationToken);
         CleanupWallpaperFiles(directory, generatedImages);
         host.Result = true;
-        host.Log($"Fond d'écran local appliqué sur {monitorCount} écran(s); " +
+        host.Log($"Fond d'écran local appliqué sur {monitorCount} écran(s) actif(s); " +
                  $"{generatedImages.Count} image(s) préparée(s) depuis la liste configurée " +
                  $"{(settings.IncludeSystemInfo ? "avec" : "sans")} ajout d'informations système.");
     }
@@ -440,9 +442,9 @@ public sealed class WallpaperModule : IPlugin
             rotated[index] = images[(startIndex + index) % images.Count];
 
         cancellationToken.ThrowIfCancellationRequested();
-        var monitorCount = SetWallpapers(rotated, cancellationToken);
+        var monitorCount = SetWallpapers(rotated, host.Log, cancellationToken);
         host.Result = true;
-        host.Log($"Rotation aléatoire appliquée sur {monitorCount} écran(s) à partir de " +
+        host.Log($"Rotation aléatoire appliquée sur {monitorCount} écran(s) actif(s) à partir de " +
                  $"{images.Count} image(s) préparée(s) dans « {directory} » " +
                  $"(départ : {Path.GetFileName(rotated[0])}).");
     }
@@ -775,7 +777,7 @@ public sealed class WallpaperModule : IPlugin
     }
 
     private static int SetWallpapers(
-        IReadOnlyList<string> wallpaperPaths, CancellationToken cancellationToken)
+        IReadOnlyList<string> wallpaperPaths, Action<string> log, CancellationToken cancellationToken)
     {
         if (wallpaperPaths.Count == 0)
             throw new ArgumentException("Aucune image de fond d'écran fournie.", nameof(wallpaperPaths));
@@ -792,21 +794,84 @@ public sealed class WallpaperModule : IPlugin
             if (monitorPaths.Length == 0)
                 throw new InvalidOperationException("Aucun écran n'a été détecté.");
 
-            for (var index = 0; index < monitorPaths.Length; index++)
+            var targetPaths = GetActiveMonitorPaths(monitorPaths, log);
+            for (var index = 0; index < targetPaths.Length; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 CheckHResult(
                     desktopWallpaper.SetWallpaper(
-                        monitorPaths[index], wallpaperPaths[index % wallpaperPaths.Count]),
+                        targetPaths[index], wallpaperPaths[index % wallpaperPaths.Count]),
                     "SetWallpaper");
             }
-            return monitorPaths.Length;
+            return targetPaths.Length;
         }
         finally
         {
             if (Marshal.IsComObject(component))
                 Marshal.ReleaseComObject(component);
         }
+    }
+
+    /// <summary>
+    /// Windows conserve dans la liste des fonds d'écran des entrées qui ne correspondent à aucun
+    /// écran présent (identifiants « legacy_monitor_001 » ou écrans retirés). Ces entrées sont
+    /// écartées pour n'affecter que les écrans de la topologie d'affichage active.
+    /// </summary>
+    private static string[] GetActiveMonitorPaths(string[] monitorPaths, Action<string> log)
+    {
+        var activePaths = GetActiveMonitorDevicePaths();
+        if (activePaths.Count == 0)
+            return monitorPaths;
+
+        var targetPaths = monitorPaths.Where(activePaths.Contains).ToArray();
+        if (targetPaths.Length == 0)
+        {
+            log("La topologie d'affichage active ne correspond à aucun écran connu ; " +
+                "tous les écrans de la liste Windows sont utilisés.");
+            return monitorPaths;
+        }
+
+        var ignoredCount = monitorPaths.Length - targetPaths.Length;
+        if (ignoredCount > 0)
+            log($"{ignoredCount} écran(s) inactif(s) ignoré(s) ; " +
+                $"le fond d'écran est appliqué sur {targetPaths.Length} écran(s) actif(s).");
+        return targetPaths;
+    }
+
+    private static HashSet<string> GetActiveMonitorDevicePaths()
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (GetDisplayConfigBufferSizes(QdcOnlyActivePaths, out var pathCount, out var modeCount) != 0 ||
+            pathCount == 0)
+            return paths;
+
+        var pathArray = new DisplayConfigPathInfo[pathCount];
+        var modeArray = new DisplayConfigModeInfo[modeCount];
+        if (QueryDisplayConfig(
+                QdcOnlyActivePaths, ref pathCount, pathArray, ref modeCount, modeArray, IntPtr.Zero) != 0)
+            return paths;
+
+        for (var index = 0; index < pathCount; index++)
+        {
+            var target = pathArray[index].TargetInfo;
+            if (target.TargetAvailable == 0)
+                continue;
+
+            var deviceName = new DisplayConfigTargetDeviceName
+            {
+                Header = new DisplayConfigDeviceInfoHeader
+                {
+                    Type = GetTargetDeviceName,
+                    Size = (uint)Marshal.SizeOf<DisplayConfigTargetDeviceName>(),
+                    AdapterId = target.AdapterId,
+                    Id = target.Id
+                }
+            };
+            if (DisplayConfigGetDeviceInfo(ref deviceName) == 0 &&
+                !string.IsNullOrWhiteSpace(deviceName.MonitorDevicePath))
+                paths.Add(deviceName.MonitorDevicePath);
+        }
+        return paths;
     }
 
     private static string[] GetMonitorDevicePaths(IDesktopWallpaperNative wallpaper)
@@ -838,6 +903,99 @@ public sealed class WallpaperModule : IPlugin
             throw new InvalidOperationException(
                 $"{operation} a échoué (HRESULT 0x{unchecked((uint)result):X8}).");
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DisplayConfigLuid
+    {
+        public uint LowPart;
+        public int HighPart;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DisplayConfigRational
+    {
+        public uint Numerator;
+        public uint Denominator;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DisplayConfigPathSourceInfo
+    {
+        public DisplayConfigLuid AdapterId;
+        public uint Id;
+        public uint ModeInfoIdx;
+        public uint StatusFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DisplayConfigPathTargetInfo
+    {
+        public DisplayConfigLuid AdapterId;
+        public uint Id;
+        public uint ModeInfoIdx;
+        public uint OutputTechnology;
+        public uint Rotation;
+        public uint Scaling;
+        public DisplayConfigRational RefreshRate;
+        public uint ScanLineOrdering;
+        public int TargetAvailable;
+        public uint StatusFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DisplayConfigPathInfo
+    {
+        public DisplayConfigPathSourceInfo SourceInfo;
+        public DisplayConfigPathTargetInfo TargetInfo;
+        public uint Flags;
+    }
+
+    // Seuls les champs d'en-tête servent ; les 64 octets correspondent à DISPLAYCONFIG_MODE_INFO.
+    [StructLayout(LayoutKind.Sequential, Size = 64)]
+    private struct DisplayConfigModeInfo
+    {
+        public uint InfoType;
+        public uint Id;
+        public DisplayConfigLuid AdapterId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DisplayConfigDeviceInfoHeader
+    {
+        public uint Type;
+        public uint Size;
+        public DisplayConfigLuid AdapterId;
+        public uint Id;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct DisplayConfigTargetDeviceName
+    {
+        public DisplayConfigDeviceInfoHeader Header;
+        public uint Flags;
+        public uint OutputTechnology;
+        public ushort EdidManufactureId;
+        public ushort EdidProductCodeId;
+        public uint ConnectorInstance;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string MonitorFriendlyDeviceName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string MonitorDevicePath;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern int GetDisplayConfigBufferSizes(
+        uint flags, out uint numPathArrayElements, out uint numModeInfoArrayElements);
+
+    [DllImport("user32.dll")]
+    private static extern int QueryDisplayConfig(
+        uint flags,
+        ref uint numPathArrayElements,
+        [Out] DisplayConfigPathInfo[] pathInfoArray,
+        ref uint numModeInfoArrayElements,
+        [Out] DisplayConfigModeInfo[] modeInfoArray,
+        IntPtr currentTopologyId);
+
+    [DllImport("user32.dll")]
+    private static extern int DisplayConfigGetDeviceInfo(ref DisplayConfigTargetDeviceName deviceName);
 
     [ComImport]
     [Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B")]
